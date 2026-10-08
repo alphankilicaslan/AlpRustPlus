@@ -1,4 +1,4 @@
-using RustPlusDesk.Services;
+﻿using RustPlusDesk.Services;
 using RustPlusDesk.Services.Camera;
 using RustPlusApi.Data.Cameras;
 using System;
@@ -126,6 +126,7 @@ namespace RustPlusDesk.Views
 
             ApplyFps();
             ConfigureHud(_session);
+            UpdateThermalButtonVisual();
             TxtStatus.Text = string.Empty;
         }
 
@@ -133,15 +134,23 @@ namespace RustPlusDesk.Views
         {
             if (_session == null) return;
             _session.IsThermalMode = !_session.IsThermalMode;
-            if (_session.IsThermalMode)
+            UpdateThermalButtonVisual();
+        }
+
+        private void UpdateThermalButtonVisual()
+        {
+            if (BtnThermal == null) return;
+            if (_session != null && _session.IsThermalMode)
             {
                 BtnThermal.Background = new SolidColorBrush(Color.FromRgb(245, 158, 11)); // Amber
                 BtnThermal.Foreground = Brushes.Black;
+                BtnThermal.Content = "\uD83D\uDD25 Termal: A\u00E7\u0131k (T)";
             }
             else
             {
                 BtnThermal.Background = new SolidColorBrush(Color.FromRgb(34, 39, 48));
                 BtnThermal.Foreground = new SolidColorBrush(Color.FromRgb(229, 231, 235));
+                BtnThermal.Content = "\uD83D\uDD25 Termal: Kapal\u0131 (T)";
             }
         }
 
@@ -171,6 +180,18 @@ namespace RustPlusDesk.Views
         private void CameraWindow_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             var key = e.Key == Key.System ? e.SystemKey : e.Key;
+
+            // T veya N: Termal / Gece Görüş Modu Aç/Kapat
+            if (key == Key.T || key == Key.N)
+            {
+                if (_session != null)
+                {
+                    _session.IsThermalMode = !_session.IsThermalMode;
+                    UpdateThermalButtonVisual();
+                }
+                e.Handled = true;
+                return;
+            }
 
             // Space veya Escape: Acil Fren! Dronun havada anında hover yapmasını sağlar
             if (key == Key.Space || key == Key.Escape)

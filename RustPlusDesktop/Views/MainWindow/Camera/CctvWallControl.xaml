@@ -140,10 +140,10 @@
                     <!-- Thermal Mode Toggle Button -->
                     <Button x:Name="BtnToggleThermal" Style="{StaticResource LayoutBtnStyle}"
                             Padding="8,2" Click="BtnToggleThermal_Click" Margin="0,0,6,0"
-                            ToolTip="Termal Görüş Modunu Aç/Kapat (FLIR Isı Haritası)">
+                            ToolTip="Termal / Gece Görüş Modunu Aç/Kapat (FLIR Isı Haritası - Kısayol: T veya N)">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock x:Name="TxtThermalIcon" Text="🔥" FontSize="11" Margin="0,0,4,0" VerticalAlignment="Center" />
-                            <TextBlock x:Name="TxtThermalStatus" Text="Termal: Kapalı" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
+                            <TextBlock x:Name="TxtThermalStatus" Text="Termal: Kapalı (T)" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
 

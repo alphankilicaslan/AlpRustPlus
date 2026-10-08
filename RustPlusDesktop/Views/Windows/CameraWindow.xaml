@@ -52,10 +52,10 @@
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <TextBlock x:Name="TxtStatus" VerticalAlignment="Center" Margin="0,0,14,0"
                            Foreground="{DynamicResource TextSubtle}" FontSize="12" Opacity="0.85"/>
-                <Button x:Name="BtnThermal" Content="🔥 Termal" Padding="8,2" Margin="0,0,12,0"
+                <Button x:Name="BtnThermal" Content="🔥 Termal (T)" Padding="8,2" Margin="0,0,12,0"
                         Background="#222730" Foreground="#E5E7EB" BorderBrush="#374151" BorderThickness="1"
                         Cursor="Hand" FontSize="11" FontWeight="SemiBold"
-                        ToolTip="Termal Görüş Modunu Aç/Kapat (FLIR Isı Haritası)"
+                        ToolTip="Termal / Gece Görüş Modunu Aç/Kapat (FLIR Isı Haritası - Kısayol: T veya N)"
                         Click="BtnThermal_Click" VerticalAlignment="Center"/>
                 <Button x:Name="BtnTurboFpv" Content="⚡ Turbo FPV" Padding="8,2" Margin="0,0,12,0"
                         Background="#222730" Foreground="#E5E7EB" BorderBrush="#374151" BorderThickness="1"

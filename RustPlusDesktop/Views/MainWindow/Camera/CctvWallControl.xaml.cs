@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -81,6 +81,7 @@ namespace RustPlusDesk.Views
             public Button HudZoomBtn = null!;
             public Button HudFireBtn = null!;
             public Button HudReloadBtn = null!;
+            public Button? HudThermalBtn;
             public int FrameCount;
             public DateTime LastFrameTime;
             public bool IsConnecting;
@@ -195,7 +196,7 @@ namespace RustPlusDesk.Views
                 string camId = kvp.Value;
                 if (string.IsNullOrWhiteSpace(camId)) continue;
 
-                // Drone DÃ¼ÅŸme KorumasÄ±: Havadaki drone'un motorlarÄ± durup dÃ¼ÅŸmesin!
+                // Drone Dusme Korumasi: Havadaki drone'un motorlari durup dusmesin!
                 if (_activeSessions.TryGetValue(slotIndex, out var ses) && ses.IsDrone)
                 {
                     continue;
@@ -221,13 +222,13 @@ namespace RustPlusDesk.Views
             {
                 BtnToggleTurboFpv.Background = new SolidColorBrush(Color.FromRgb(59, 130, 246)); // Vivid Blue
                 BtnToggleTurboFpv.Foreground = Brushes.White;
-                TxtTurboFpvStatus.Text = "Turbo FPV: AÃ§Ä±k";
+                TxtTurboFpvStatus.Text = "Turbo FPV: A\u00E7\u0131k";
             }
             else
             {
                 BtnToggleTurboFpv.Background = new SolidColorBrush(Color.FromRgb(34, 39, 48));
                 BtnToggleTurboFpv.Foreground = new SolidColorBrush(Color.FromRgb(229, 231, 235));
-                TxtTurboFpvStatus.Text = "Turbo FPV: KapalÄ±";
+                TxtTurboFpvStatus.Text = "Turbo FPV: Kapal\u0131";
             }
 
             foreach (var session in _activeSessions.Values)
@@ -252,19 +253,29 @@ namespace RustPlusDesk.Views
             {
                 BtnToggleThermal.Background = new SolidColorBrush(Color.FromRgb(245, 158, 11)); // Amber
                 BtnToggleThermal.Foreground = Brushes.Black;
-                TxtThermalStatus.Text = "Termal: AÃ§Ä±k";
+                TxtThermalStatus.Text = "Termal: A\u00E7\u0131k (T)";
             }
             else
             {
                 BtnToggleThermal.Background = new SolidColorBrush(Color.FromRgb(34, 39, 48));
                 BtnToggleThermal.Foreground = new SolidColorBrush(Color.FromRgb(229, 231, 235));
-                TxtThermalStatus.Text = "Termal: KapalÄ±";
+                TxtThermalStatus.Text = "Termal: Kapal\u0131 (T)";
+            }
+
+            foreach (var ctrl in _slotControls.Values)
+            {
+                if (ctrl.HudThermalBtn != null)
+                {
+                    ctrl.HudThermalBtn.Background = _isThermalEnabled
+                        ? new SolidColorBrush(Color.FromRgb(245, 158, 11))
+                        : new SolidColorBrush(Color.FromArgb(220, 30, 41, 59));
+                    ctrl.HudThermalBtn.Foreground = _isThermalEnabled ? Brushes.Black : Brushes.White;
+                }
             }
 
             foreach (var session in _activeSessions.Values)
             {
                 session.IsThermalMode = _isThermalEnabled;
-                session.IsTurboFpvMode = _isTurboFpvEnabled;
             }
         }
 
@@ -285,8 +296,8 @@ namespace RustPlusDesk.Views
                 _wasdTimer.Start();
                 BtnToggleWasd.Background = new SolidColorBrush(Color.FromRgb(16, 185, 129));
                 BtnToggleWasd.Foreground = Brushes.White;
-                TxtWasdIcon.Text = "ğŸ®";
-                TxtWasdStatus.Text = "WASD: AÃ§Ä±k";
+                TxtWasdIcon.Text = "\uD83C\uDFAE";
+                TxtWasdStatus.Text = "WASD: A\u00E7\u0131k";
 
                 if (!_activeSlotIndex.HasValue || !_activeSessions.ContainsKey(_activeSlotIndex.Value))
                 {
@@ -307,8 +318,8 @@ namespace RustPlusDesk.Views
                 ClearHeldKeys();
                 BtnToggleWasd.Background = new SolidColorBrush(Color.FromRgb(34, 39, 48));
                 BtnToggleWasd.Foreground = new SolidColorBrush(Color.FromRgb(229, 231, 235));
-                TxtWasdIcon.Text = "âŒ¨ï¸";
-                TxtWasdStatus.Text = "WASD: KapalÄ±";
+                TxtWasdIcon.Text = "\u2328";
+                TxtWasdStatus.Text = "WASD: Kapal\u0131";
             }
             UpdateActiveSlotVisuals();
         }
@@ -350,8 +361,6 @@ namespace RustPlusDesk.Views
 
         public bool HandlePreviewKeyDown(KeyEventArgs e)
         {
-            if (!_isWasdEnabled) return false;
-
             var focused = Keyboard.FocusedElement;
             if (focused is System.Windows.Controls.Primitives.TextBoxBase ||
                 focused is PasswordBox ||
@@ -360,8 +369,10 @@ namespace RustPlusDesk.Views
                 return false;
             }
 
-            // Space veya Escape: Acil Fren! TÃ¼m hareket girdilerini anÄ±nda keser, drone havada hover moduna geÃ§er
-            if (e.Key == Key.Space || e.Key == Key.Escape)
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+
+            // Space veya Escape: Acil Fren! Tüm hareket girdilerini anında keser, drone havada hover moduna geçer
+            if (key == Key.Space || key == Key.Escape)
             {
                 ClearHeldKeys();
 
@@ -373,7 +384,7 @@ namespace RustPlusDesk.Views
                         _lastSentButtons = CameraButtons.None;
                         if (TrackingService.DroneDynamicFpvEnabled && !_isTurboFpvEnabled && ses.IsTurboFpvMode)
                         {
-                            ses.IsTurboFpvMode = false; // Hover/Durdu: otomatik anÄ±nda HD moda dÃ¶n
+                            ses.IsTurboFpvMode = false;
                         }
                     }
                 }
@@ -382,7 +393,16 @@ namespace RustPlusDesk.Views
                 return true;
             }
 
-            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            // T veya N: Termal / Gece Görüş Modu Aç/Kapat
+            if (key == Key.T || key == Key.N)
+            {
+                SetThermalEnabled(!_isThermalEnabled);
+                e.Handled = true;
+                return true;
+            }
+
+            if (!_isWasdEnabled) return false;
+
             if (IsControlKey(key))
             {
                 lock (_heldKeys) { _heldKeys.Add(key); }
@@ -451,7 +471,7 @@ namespace RustPlusDesk.Views
                         _lastSentButtons = CameraButtons.None;
                     }
 
-                    // Dinamik FPV: Drone hareket etmediÄŸinde otomatik HD moda dÃ¶n
+                    // Dinamik FPV: Drone hareket etmediginde otomatik HD moda don
                     if (TrackingService.DroneDynamicFpvEnabled && !_isTurboFpvEnabled && session.IsTurboFpvMode)
                     {
                         session.IsTurboFpvMode = false;
@@ -464,8 +484,8 @@ namespace RustPlusDesk.Views
             bool isBackward = keys.Contains(Key.S) || keys.Contains(Key.Down);
             bool isLeft = keys.Contains(Key.A) || keys.Contains(Key.Left);
             bool isRight = keys.Contains(Key.D) || keys.Contains(Key.Right);
-            bool isUp = keys.Contains(Key.LeftShift) || keys.Contains(Key.RightShift); // Shift = YukarÄ± (Ascend)
-            bool isDown = keys.Contains(Key.LeftCtrl) || keys.Contains(Key.RightCtrl) || keys.Contains(Key.C); // Ctrl = AÅŸaÄŸÄ± (Descend)
+            bool isUp = keys.Contains(Key.LeftShift) || keys.Contains(Key.RightShift); // Shift = Yukari (Ascend)
+            bool isDown = keys.Contains(Key.LeftCtrl) || keys.Contains(Key.RightCtrl) || keys.Contains(Key.C); // Ctrl = Asagi (Descend)
             bool isReload = keys.Contains(Key.R);
 
             if (isReload && (session.IsAutoTurret || session.ControlFlags.HasFlag(CameraControlFlags.Reload)))
@@ -475,7 +495,7 @@ namespace RustPlusDesk.Views
 
             if (isMovementDrone)
             {
-                // Dinamik FPV: Drone hareket halindeyken otomatik Turbo FPV moduna geÃ§!
+                // Dinamik FPV: Drone hareket halindeyken otomatik Turbo FPV moduna gec!
                 if (TrackingService.DroneDynamicFpvEnabled && !session.IsTurboFpvMode)
                 {
                     session.IsTurboFpvMode = true;
@@ -486,8 +506,8 @@ namespace RustPlusDesk.Views
                 if (isBackward) buttons |= CameraButtons.Backward;
                 if (isLeft) buttons |= CameraButtons.Left;
                 if (isRight) buttons |= CameraButtons.Right;
-                if (isUp) buttons |= CameraButtons.Jump;   // Shift = YukarÄ±
-                if (isDown) buttons |= CameraButtons.Duck; // Ctrl = AÅŸaÄŸÄ±
+                if (isUp) buttons |= CameraButtons.Jump;   // Shift = Yukari
+                if (isDown) buttons |= CameraButtons.Duck; // Ctrl = Asagi
 
                 _ = session.SendInputAsync(buttons, 0f, 0f);
                 _lastSentButtons = buttons;
@@ -648,8 +668,8 @@ namespace RustPlusDesk.Views
 
             var btnZoom = new Button
             {
-                Content = "ğŸ”",
-                ToolTip = "YakÄ±nlaÅŸtÄ±r / Zoom (PTZ)",
+                Content = "\uD83D\uDD0D",
+                ToolTip = "Yak\u0131nla\u015Ft\u0131r / Zoom (PTZ)",
                 Width = 18,
                 Height = 18,
                 Padding = new Thickness(0),
@@ -658,6 +678,7 @@ namespace RustPlusDesk.Views
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand,
                 FontSize = 10,
+                FontFamily = new FontFamily("Segoe UI, Segoe UI Symbol"),
                 Margin = new Thickness(0, 0, 2, 0),
                 Visibility = Visibility.Collapsed
             };
@@ -669,8 +690,8 @@ namespace RustPlusDesk.Views
 
             var btnFire = new Button
             {
-                Content = "ğŸ”¥",
-                ToolTip = "AteÅŸ Et / Fire (Taret)",
+                Content = "\uD83D\uDD25",
+                ToolTip = "Ate\u015F Et / Fire (Taret)",
                 Width = 18,
                 Height = 18,
                 Padding = new Thickness(0),
@@ -679,6 +700,7 @@ namespace RustPlusDesk.Views
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand,
                 FontSize = 10,
+                FontFamily = new FontFamily("Segoe UI, Segoe UI Symbol"),
                 Margin = new Thickness(0, 0, 3, 0),
                 Visibility = Visibility.Collapsed
             };
@@ -700,8 +722,8 @@ namespace RustPlusDesk.Views
 
             var btnReconnect = new Button
             {
-                Content = "â†»",
-                ToolTip = "KamerayÄ± yeniden baÄŸla",
+                Content = "\u21BB",
+                ToolTip = "Kameray\u0131 yeniden ba\u011Fla",
                 Width = 18,
                 Height = 18,
                 Padding = new Thickness(0),
@@ -710,6 +732,7 @@ namespace RustPlusDesk.Views
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand,
                 FontSize = 11,
+                FontFamily = new FontFamily("Segoe UI, Segoe UI Symbol"),
                 Margin = new Thickness(0, 0, 2, 0)
             };
             btnReconnect.Click += (_, __) =>
@@ -723,8 +746,8 @@ namespace RustPlusDesk.Views
 
             var btnMaximize = new Button
             {
-                Content = _maximizedSlot == slotIndex ? "â" : "â›¶",
-                ToolTip = _maximizedSlot == slotIndex ? "Izgara gÃ¶rÃ¼nÃ¼mÃ¼ne dÃ¶n" : "Tam ekran yap",
+                Content = _maximizedSlot == slotIndex ? "\u2750" : "\u26F6",
+                ToolTip = _maximizedSlot == slotIndex ? "\u0130zgara g\u00F6r\u00FCn\u00FCm\u00FCne d\u00F6n" : "Tam ekran yap",
                 Width = 18,
                 Height = 18,
                 Padding = new Thickness(0),
@@ -732,7 +755,8 @@ namespace RustPlusDesk.Views
                 Foreground = Brushes.LightGray,
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand,
-                FontSize = 10
+                FontSize = 10,
+                FontFamily = new FontFamily("Segoe UI, Segoe UI Symbol")
             };
             btnMaximize.Click += (_, __) => ToggleMaximizeSlot(slotIndex);
             rightStack.Children.Add(btnMaximize);
@@ -851,7 +875,7 @@ namespace RustPlusDesk.Views
 
             var statusText = new TextBlock
             {
-                Text = "Kamera SeÃ§in",
+                Text = "Kamera Se\u00E7in",
                 Foreground = new SolidColorBrush(Color.FromRgb(107, 114, 128)),
                 FontSize = 11,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -899,46 +923,57 @@ namespace RustPlusDesk.Views
                     BorderBrush = new SolidColorBrush(Color.FromArgb(180, 71, 85, 105)),
                     BorderThickness = new Thickness(1),
                     FontSize = 10,
+                    FontFamily = new FontFamily("Segoe UI, Segoe UI Symbol"),
                     Cursor = Cursors.Hand
                 };
                 b.Click += (_, __) => action();
                 return b;
             }
 
-            hudPanel.Children.Add(MakeHudBtn("â—€", "Sola Ã‡evir (Pan Sol)", () => {
+            hudPanel.Children.Add(MakeHudBtn("\u25C0", "Sola \u00C7evir (Pan Sol)", () => {
                 if (_activeSessions.TryGetValue(slotIndex, out var s)) _ = s.LookAsync(-3f, 0);
             }));
-            hudPanel.Children.Add(MakeHudBtn("â–²", "YukarÄ± Ã‡evir (Tilt YukarÄ±)", () => {
+            hudPanel.Children.Add(MakeHudBtn("\u25B2", "Yukar\u0131 \u00C7evir (Tilt Yukar\u0131)", () => {
                 if (_activeSessions.TryGetValue(slotIndex, out var s)) _ = s.LookAsync(0, 3f);
             }));
-            hudPanel.Children.Add(MakeHudBtn("â–¼", "AÅŸaÄŸÄ± Ã‡evir (Tilt AÅŸaÄŸÄ±)", () => {
+            hudPanel.Children.Add(MakeHudBtn("\u25BC", "A\u015Fa\u011F\u0131 \u00C7evir (Tilt A\u015Fa\u011F\u0131)", () => {
                 if (_activeSessions.TryGetValue(slotIndex, out var s)) _ = s.LookAsync(0, -3f);
             }));
-            hudPanel.Children.Add(MakeHudBtn("â–¶", "SaÄŸa Ã‡evir (Pan SaÄŸ)", () => {
+            hudPanel.Children.Add(MakeHudBtn("\u25B6", "Sa\u011Fa \u00C7evir (Pan Sa\u011F)", () => {
                 if (_activeSessions.TryGetValue(slotIndex, out var s)) _ = s.LookAsync(3f, 0);
             }));
 
-            var hudZoomBtn = MakeHudBtn("ğŸ”", "YakÄ±nlaÅŸtÄ±r / Zoom (PTZ)", () => {
+            var hudZoomBtn = MakeHudBtn("\uD83D\uDD0D", "Yak\u0131nla\u015Ft\u0131r / Zoom (PTZ)", () => {
                 if (_activeSessions.TryGetValue(slotIndex, out var s)) _ = s.ZoomAsync();
             });
             hudPanel.Children.Add(hudZoomBtn);
 
-            var hudFireBtn = MakeHudBtn("ğŸ”¥", "AteÅŸ Et / Fire (Taret)", () => {
+            var hudFireBtn = MakeHudBtn("\uD83D\uDD25", "Ate\u015F Et / Fire (Taret)", () => {
                 if (_activeSessions.TryGetValue(slotIndex, out var s)) _ = s.ShootAsync();
             });
             hudFireBtn.Background = new SolidColorBrush(Color.FromArgb(220, 185, 28, 28));
             hudFireBtn.BorderBrush = new SolidColorBrush(Color.FromArgb(255, 239, 68, 68));
             hudPanel.Children.Add(hudFireBtn);
 
-            var hudReloadBtn = MakeHudBtn("ğŸ”„", "Mermi Doldur / Reload", () => {
+            var hudReloadBtn = MakeHudBtn("\u21BB", "Mermi Doldur / Reload", () => {
                 if (_activeSessions.TryGetValue(slotIndex, out var s)) _ = s.ReloadAsync();
             });
             hudPanel.Children.Add(hudReloadBtn);
 
-            var hudCrossBtn = MakeHudBtn("ğŸ¯", "Hedef NoktasÄ± (Crosshair) AÃ§/Kapa", () => {
+            var hudCrossBtn = MakeHudBtn("\u2295", "Hedef Noktas\u0131 (Crosshair) A\u00E7/Kapa", () => {
                 crosshair.Visibility = crosshair.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
             });
             hudPanel.Children.Add(hudCrossBtn);
+
+            var hudThermalBtn = MakeHudBtn("\u2600", "Termal / Gece G\u00F6r\u00FC\u015F Modu A\u00E7/Kapat (T / N)", () => {
+                SetThermalEnabled(!_isThermalEnabled);
+            });
+            if (_isThermalEnabled)
+            {
+                hudThermalBtn.Background = new SolidColorBrush(Color.FromRgb(245, 158, 11));
+                hudThermalBtn.Foreground = Brushes.Black;
+            }
+            hudPanel.Children.Add(hudThermalBtn);
 
             controlsHud.Child = hudPanel;
             videoContainer.Children.Add(controlsHud);
@@ -959,7 +994,7 @@ namespace RustPlusDesk.Views
             };
             activeBadge.Child = new TextBlock
             {
-                Text = "ğŸ® WASD & FARE AKTÄ°F",
+                Text = "\uD83C\uDFAE WASD & FARE AKT\u0130F",
                 FontSize = 9.5,
                 FontWeight = FontWeights.Bold,
                 Foreground = new SolidColorBrush(Color.FromRgb(209, 250, 229))
@@ -982,7 +1017,8 @@ namespace RustPlusDesk.Views
                 ActiveBadge = activeBadge,
                 HudZoomBtn = hudZoomBtn,
                 HudFireBtn = hudFireBtn,
-                HudReloadBtn = hudReloadBtn
+                HudReloadBtn = hudReloadBtn,
+                HudThermalBtn = hudThermalBtn
             };
             _slotControls[slotIndex] = slotCtrl;
 
@@ -1113,7 +1149,7 @@ namespace RustPlusDesk.Views
             if (!_slotControls.TryGetValue(slotIndex, out var ctrl)) return;
 
             ctrl.IsConnecting = true;
-            ctrl.StatusText.Text = $"{cameraId} BaÄŸlanÄ±yorâ€¦";
+            ctrl.StatusText.Text = $"{cameraId} Ba\u011Flan\u0131yor\u2026";
             ctrl.StatusText.Visibility = Visibility.Visible;
             ctrl.StatusDot.Fill = new SolidColorBrush(Color.FromRgb(245, 158, 11)); // Yellow
             ctrl.FrameCount = 0;
@@ -1193,7 +1229,7 @@ namespace RustPlusDesk.Views
                 ctrl.Img.Source = null;
                 ctrl.FpsBadge.Text = "0 FPS";
                 ctrl.StatusDot.Fill = new SolidColorBrush(Color.FromRgb(107, 114, 128)); // Grey
-                ctrl.StatusText.Text = "Kamera SeÃ§in";
+                ctrl.StatusText.Text = "Kamera Se\u00E7in";
                 ctrl.StatusText.Visibility = Visibility.Visible;
                 ctrl.BtnZoom.Visibility = Visibility.Collapsed;
                 ctrl.BtnFire.Visibility = Visibility.Collapsed;

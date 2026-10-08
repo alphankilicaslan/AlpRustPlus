@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -40,11 +40,35 @@ namespace RustPlusDesk.Services.Camera
         public bool IsAutoTurret => _controller.IsAutoTurret;
         public bool IsStaticCamera => _controller.IsStaticCamera;
 
+        private bool _isThermalMode = false;
         /// <summary>Enables high-contrast FLIR ironbow thermal visualization mode.</summary>
-        public bool IsThermalMode { get; set; } = false;
+        public bool IsThermalMode
+        {
+            get => _isThermalMode;
+            set
+            {
+                if (_isThermalMode != value)
+                {
+                    _isThermalMode = value;
+                    ForceRender();
+                }
+            }
+        }
 
+        private bool _isTurboFpvMode = false;
         /// <summary>Enables low-res superpixel FPV splatting mode (instant full screen fill for fast drone flight / responsive camera).</summary>
-        public bool IsTurboFpvMode { get; set; } = false;
+        public bool IsTurboFpvMode
+        {
+            get => _isTurboFpvMode;
+            set
+            {
+                if (_isTurboFpvMode != value)
+                {
+                    _isTurboFpvMode = value;
+                    ForceRender();
+                }
+            }
+        }
 
         private int[]? _pixelBuffer;
 
@@ -177,6 +201,58 @@ namespace RustPlusDesk.Services.Camera
              }
          }
  
+        private IReadOnlyList<CameraEntity> _lastEntities = Array.Empty<CameraEntity>();
+        private double _lastVfov = 0.0;
+
+        /// <summary>
+        /// Forces an immediate re-render of the current camera frame without waiting for new network packets.
+        /// Useful when toggling Thermal or Turbo FPV mode to provide instantaneous visual feedback.
+        /// </summary>
+        public void ForceRender()
+        {
+            if (_disposed) return;
+            System.Windows.Media.Imaging.BitmapSource? directBitmap = null;
+
+            lock (_renderLock)
+            {
+                if (_disposed || _renderer == null) return;
+                int w = Width > 0 ? Width : 160;
+                int h = Height > 0 ? Height : 120;
+                int totalPixels = w * h;
+
+                if (_pixelBuffer == null || _pixelBuffer.Length != totalPixels)
+                {
+                    _pixelBuffer = new int[totalPixels];
+                }
+
+                var rawOutput = GetRendererOutput(_renderer);
+                if (rawOutput != null && rawOutput.Length >= totalPixels)
+                {
+                    RenderPixelsToBuffer(rawOutput, w, h, totalPixels, _lastEntities, _lastVfov);
+
+                    try
+                    {
+                        var bs = System.Windows.Media.Imaging.BitmapSource.Create(
+                            w, h,
+                            96, 96,
+                            System.Windows.Media.PixelFormats.Bgr32,
+                            null,
+                            _pixelBuffer,
+                            w * 4
+                        );
+                        bs.Freeze();
+                        directBitmap = bs;
+                    }
+                    catch { }
+                }
+            }
+
+            if (directBitmap != null)
+            {
+                FrameBitmapRendered?.Invoke(directBitmap);
+            }
+        }
+
         private void OnFrameReceived(object? sender, CameraRaysEventArg frame)
         {
             if (_disposed) return;
@@ -185,6 +261,8 @@ namespace RustPlusDesk.Services.Camera
                 ? Array.Empty<CameraEntity>()
                 : (frame.Entities as IReadOnlyList<CameraEntity>) ?? new List<CameraEntity>(frame.Entities);
             var vfov = frame.VerticalFov;
+            _lastEntities = entities;
+            _lastVfov = vfov;
 
             System.Windows.Media.Imaging.BitmapSource? directBitmap = null;
             byte[]? png = null;
@@ -212,131 +290,7 @@ namespace RustPlusDesk.Services.Camera
                 var rawOutput = GetRendererOutput(_renderer);
                 if (rawOutput != null && rawOutput.Length >= totalPixels)
                 {
-                    bool isThermal = IsThermalMode;
-                    bool isTurbo = IsTurboFpvMode;
-                    const int skyColorNormal = unchecked((int)0xFF0E1116);
-                    int skyColorThermal = ThermalLut[0];
-
-                    if (isTurbo)
-                    {
-                        // Turbo FPV Mode (2x2 Superpixel Splatting):
-                        // Fills the entire screen 4x faster (in 1-2 packets), eliminating holes and latency during flight!
-                        int defaultColor = isThermal ? skyColorThermal : skyColorNormal;
-                        Array.Fill(_pixelBuffer, defaultColor);
-
-                        for (int y = 0; y < h; y++)
-                        {
-                            int rowOffset = y * w;
-                            for (int x = 0; x < w; x++)
-                            {
-                                var pixel = rawOutput[rowOffset + x];
-                                if (!pixel.HasValue) continue;
-
-                                var (r, g, b) = pixel.Value;
-                                int col;
-                                if (isThermal)
-                                {
-                                    int lum = (299 * r + 587 * g + 114 * b) / 1000;
-                                    if (lum > 255) lum = 255; else if (lum < 0) lum = 0;
-                                    col = ThermalLut[lum];
-                                }
-                                else
-                                {
-                                    col = unchecked((int)((0xFFu << 24) | ((uint)r << 16) | ((uint)g << 8) | (uint)b));
-                                }
-
-                                _pixelBuffer[rowOffset + x] = col;
-                                if (x + 1 < w) _pixelBuffer[rowOffset + x + 1] = col;
-                                if (y + 1 < h)
-                                {
-                                    int nextRow = (y + 1) * w;
-                                    _pixelBuffer[nextRow + x] = col;
-                                    if (x + 1 < w) _pixelBuffer[nextRow + x + 1] = col;
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // HD Normal Mode: standard 1:1 pixel mapping
-                        for (int i = 0; i < totalPixels; i++)
-                        {
-                            var pixel = rawOutput[i];
-                            if (pixel.HasValue)
-                            {
-                                var (r, g, b) = pixel.Value;
-                                if (isThermal)
-                                {
-                                    int lum = (299 * r + 587 * g + 114 * b) / 1000;
-                                    if (lum > 255) lum = 255; else if (lum < 0) lum = 0;
-                                    _pixelBuffer[i] = ThermalLut[lum];
-                                }
-                                else
-                                {
-                                    _pixelBuffer[i] = unchecked((int)((0xFFu << 24) | ((uint)r << 16) | ((uint)g << 8) | (uint)b));
-                                }
-                            }
-                            else
-                            {
-                                _pixelBuffer[i] = isThermal ? skyColorThermal : skyColorNormal;
-                            }
-                        }
-                    }
-
-                    // Highlight detected living entities (Players / Enemies) with high visibility in BOTH modes!
-                    // In Thermal: Blazing white-hot heat signature.
-                    // In Normal/Turbo: High-contrast bright red silhouette so enemies are NEVER blurred or lost!
-                    if (entities.Count > 0 && vfov > 0)
-                    {
-                        double vf = vfov * Math.PI / 180.0;
-                        double aspect = w / (double)h;
-                        double hf = 2.0 * Math.Atan(Math.Tan(vf / 2.0) * aspect);
-                        const int whiteHot = unchecked((int)0xFFFFFFFF);
-                        const int flameHot = unchecked((int)0xFFFFE140);
-                        const int enemyRed = unchecked((int)0xFFEF4444);
-                        const int enemyOrange = unchecked((int)0xFFF97316);
-
-                        foreach (var ent in entities)
-                        {
-                            bool isPlayer = ent.Type == CameraEntityType.Player || !string.IsNullOrWhiteSpace(ent.Name);
-                            if (!isPlayer) continue;
-
-                            double ez = ent.Position.Z;
-                            if (ez <= 0.1) continue;
-
-                            double xndc = (ent.Position.X / ez) / Math.Tan(hf / 2.0);
-                            double yndc = (ent.Position.Y / ez) / Math.Tan(vf / 2.0);
-                            int cx = (int)((xndc * 0.5 + 0.5) * w);
-                            int cy = (int)((-yndc * 0.5 + 0.5) * h);
-
-                            if (cx < -5 || cx >= w + 5 || cy < -5 || cy >= h + 5) continue;
-
-                            int radius = Math.Clamp((int)(18.0 / Math.Max(1.0, ez)), 2, 8);
-                            for (int dy = -radius; dy <= radius; dy++)
-                            {
-                                int py = cy + dy;
-                                if (py < 0 || py >= h) continue;
-                                for (int dx = -radius; dx <= radius; dx++)
-                                {
-                                    int px = cx + dx;
-                                    if (px < 0 || px >= w) continue;
-                                    int distSq = dx * dx + dy * dy;
-                                    if (distSq <= radius * radius)
-                                    {
-                                        int pidx = py * w + px;
-                                        if (isThermal)
-                                        {
-                                            _pixelBuffer[pidx] = distSq <= (radius * radius / 3) ? whiteHot : flameHot;
-                                        }
-                                        else
-                                        {
-                                            _pixelBuffer[pidx] = distSq <= (radius * radius / 3) ? enemyRed : enemyOrange;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    RenderPixelsToBuffer(rawOutput, w, h, totalPixels, entities, vfov);
 
                     try
                     {
@@ -389,6 +343,135 @@ namespace RustPlusDesk.Services.Camera
             }
 
             EntitiesUpdated?.Invoke(entities, vfov);
+        }
+
+        private void RenderPixelsToBuffer((int, int, int)?[] rawOutput, int w, int h, int totalPixels, IReadOnlyList<CameraEntity> entities, double vfov)
+        {
+            bool isThermal = _isThermalMode;
+            bool isTurbo = _isTurboFpvMode;
+            const int skyColorNormal = unchecked((int)0xFF0E1116);
+            int skyColorThermal = ThermalLut[0];
+
+            if (isTurbo)
+            {
+                // Turbo FPV Mode (2x2 Superpixel Splatting):
+                // Fills the entire screen 4x faster (in 1-2 packets), eliminating holes and latency during flight!
+                int defaultColor = isThermal ? skyColorThermal : skyColorNormal;
+                Array.Fill(_pixelBuffer!, defaultColor);
+
+                for (int y = 0; y < h; y++)
+                {
+                    int rowOffset = y * w;
+                    for (int x = 0; x < w; x++)
+                    {
+                        var pixel = rawOutput[rowOffset + x];
+                        if (!pixel.HasValue) continue;
+
+                        var (r, g, b) = pixel.Value;
+                        int col;
+                        if (isThermal)
+                        {
+                            int lum = (299 * r + 587 * g + 114 * b) / 1000;
+                            if (lum > 255) lum = 255; else if (lum < 0) lum = 0;
+                            col = ThermalLut[lum];
+                        }
+                        else
+                        {
+                            col = unchecked((int)((0xFFu << 24) | ((uint)r << 16) | ((uint)g << 8) | (uint)b));
+                        }
+
+                        _pixelBuffer![rowOffset + x] = col;
+                        if (x + 1 < w) _pixelBuffer![rowOffset + x + 1] = col;
+                        if (y + 1 < h)
+                        {
+                            int nextRow = (y + 1) * w;
+                            _pixelBuffer![nextRow + x] = col;
+                            if (x + 1 < w) _pixelBuffer![nextRow + x + 1] = col;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // HD Normal Mode: standard 1:1 pixel mapping
+                for (int i = 0; i < totalPixels; i++)
+                {
+                    var pixel = rawOutput[i];
+                    if (pixel.HasValue)
+                    {
+                        var (r, g, b) = pixel.Value;
+                        if (isThermal)
+                        {
+                            int lum = (299 * r + 587 * g + 114 * b) / 1000;
+                            if (lum > 255) lum = 255; else if (lum < 0) lum = 0;
+                            _pixelBuffer![i] = ThermalLut[lum];
+                        }
+                        else
+                        {
+                            _pixelBuffer![i] = unchecked((int)((0xFFu << 24) | ((uint)r << 16) | ((uint)g << 8) | (uint)b));
+                        }
+                    }
+                    else
+                    {
+                        _pixelBuffer![i] = isThermal ? skyColorThermal : skyColorNormal;
+                    }
+                }
+            }
+
+            // Highlight detected living entities (Players / Enemies) with high visibility in BOTH modes!
+            // In Thermal: Blazing white-hot heat signature.
+            // In Normal/Turbo: High-contrast bright red silhouette so enemies are NEVER blurred or lost!
+            if (entities != null && entities.Count > 0 && vfov > 0)
+            {
+                double vf = vfov * Math.PI / 180.0;
+                double aspect = w / (double)h;
+                double hf = 2.0 * Math.Atan(Math.Tan(vf / 2.0) * aspect);
+                const int whiteHot = unchecked((int)0xFFFFFFFF);
+                const int flameHot = unchecked((int)0xFFFFE140);
+                const int enemyRed = unchecked((int)0xFFEF4444);
+                const int enemyOrange = unchecked((int)0xFFF97316);
+
+                foreach (var ent in entities)
+                {
+                    bool isPlayer = ent.Type == CameraEntityType.Player || !string.IsNullOrWhiteSpace(ent.Name);
+                    if (!isPlayer) continue;
+
+                    double ez = ent.Position.Z;
+                    if (ez <= 0.1) continue;
+
+                    double xndc = (ent.Position.X / ez) / Math.Tan(hf / 2.0);
+                    double yndc = (ent.Position.Y / ez) / Math.Tan(vf / 2.0);
+                    int cx = (int)((xndc * 0.5 + 0.5) * w);
+                    int cy = (int)((-yndc * 0.5 + 0.5) * h);
+
+                    if (cx < -5 || cx >= w + 5 || cy < -5 || cy >= h + 5) continue;
+
+                    int radius = Math.Clamp((int)(18.0 / Math.Max(1.0, ez)), 2, 8);
+                    for (int dy = -radius; dy <= radius; dy++)
+                    {
+                        int py = cy + dy;
+                        if (py < 0 || py >= h) continue;
+                        for (int dx = -radius; dx <= radius; dx++)
+                        {
+                            int px = cx + dx;
+                            if (px < 0 || px >= w) continue;
+                            int distSq = dx * dx + dy * dy;
+                            if (distSq <= radius * radius)
+                            {
+                                int pidx = py * w + px;
+                                if (isThermal)
+                                {
+                                    _pixelBuffer![pidx] = distSq <= (radius * radius / 3) ? whiteHot : flameHot;
+                                }
+                                else
+                                {
+                                    _pixelBuffer![pidx] = distSq <= (radius * radius / 3) ? enemyRed : enemyOrange;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         private void OnKeepAliveFailed(object? sender, ErrorMessage err)
