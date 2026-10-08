@@ -850,7 +850,7 @@ public partial class MainWindow : WpfUi.FluentWindow
             real.EnsureEventsHooked();
             real.DeviceStateEvent += async (id, isOn, kindFromApi) =>
             {
-                await Dispatcher.InvokeAsync(async () =>
+                await Dispatcher.InvokeAsync(() =>
                 {
                     var dev = FindDeviceById(_vm.Selected?.Devices, id);
                     if (dev == null) return;
@@ -5656,7 +5656,7 @@ private sealed record MarkerRef(System.Windows.Shapes.Ellipse Dot, double U_DIP,
 
     public static void StartIconManualDownload()
     {
-        _ = Task.Run(async () =>
+        _ = Task.Run(() =>
         {
             try
             {
@@ -6926,7 +6926,7 @@ private sealed record MarkerRef(System.Windows.Shapes.Ellipse Dot, double U_DIP,
         return name.Contains(q, StringComparison.OrdinalIgnoreCase);
     }
 
-    private async Task CheckAlerts(IReadOnlyList<RustPlusClientReal.ShopMarker> shops)
+    private Task CheckAlerts(IReadOnlyList<RustPlusClientReal.ShopMarker> shops)
     {
         foreach (var rule in _alertRules)
         {
@@ -7047,6 +7047,7 @@ private sealed record MarkerRef(System.Windows.Shapes.Ellipse Dot, double U_DIP,
             // Nach dem ersten Durchlauf markieren wir die Regel als initialisiert
             rule.InitializationComplete = true;
         }
+        return Task.CompletedTask;
     }
     // ─── ONLINE PLAYERS & TRACKING ───────────────────────────────────────────
 

@@ -120,7 +120,7 @@ public partial class MainWindow
         // 7) Optional: direkt wieder verbinden
         if (reconnect && _vm?.Selected != null)
         {
-            await Dispatcher.InvokeAsync(async () =>
+            await Dispatcher.InvokeAsync(() =>
             {
                 // wir rufen deine bestehende Logik wieder auf
                 BtnConnect_Click(this, new RoutedEventArgs());

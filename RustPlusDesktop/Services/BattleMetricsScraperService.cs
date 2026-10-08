@@ -103,13 +103,13 @@ namespace RustPlusDesk.Services
 
                 void NavHandler(object? s, CoreWebView2NavigationCompletedEventArgs e)
                 {
-                    _webView.NavigationCompleted -= NavHandler;
+                    if (_webView != null) _webView.NavigationCompleted -= NavHandler;
                     tcs.TrySetResult(e.IsSuccess);
                 }
 
-                if (_webView.CoreWebView2 == null)
+                if (_webView?.CoreWebView2 == null)
                 {
-                    _webView.NavigationCompleted -= NavHandler;
+                    if (_webView != null) _webView.NavigationCompleted -= NavHandler;
                     return;
                 }
 

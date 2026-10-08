@@ -864,10 +864,10 @@ public partial class MainWindow
         }
     }
 
-    private async Task ProcessUpkeepCommand(RustPlusClientReal real, uint entityId, string author, ChatChannel channel = ChatChannel.Team)
+    private Task ProcessUpkeepCommand(RustPlusClientReal real, uint entityId, string author, ChatChannel channel = ChatChannel.Team)
     {
         var profile = _vm.Selected;
-        if (profile == null) return;
+        if (profile == null) return Task.CompletedTask;
 
         var dev = profile.AllDevices.FirstOrDefault(d => d.EntityId == entityId && (d.Kind == "StorageMonitor" || d.Kind == "Storage Monitor"));
         if (dev != null && (dev.Storage == null || dev.Storage.IsToolCupboard || dev.Storage.ItemsCount == 0))
@@ -900,6 +900,7 @@ public partial class MainWindow
         {
             _ = SendChatCommandResponseAsync(Properties.Resources.ChatCmdUpkeepNotPairedSingle, channel);
         }
+        return Task.CompletedTask;
     }
 
     public async Task<bool> ToggleSmartSwitchFromDiscordAsync(uint entityId, bool state)

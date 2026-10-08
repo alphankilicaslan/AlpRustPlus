@@ -1,4 +1,4 @@
-﻿using RustPlusDesk.Services;
+using RustPlusDesk.Services;
 using RustPlusDesk.Services.Camera;
 using RustPlusApi.Data.Cameras;
 using System;
@@ -39,6 +39,7 @@ namespace RustPlusDesk.Views
         private readonly HashSet<Key> _heldKeys = new();
         private readonly System.Windows.Threading.DispatcherTimer _keyboardTimer;
         private CameraButtons _lastSentButtons = CameraButtons.None;
+        private DateTime _lastMouseMoveUtc = DateTime.MinValue;
 
         public CameraWindow(RustPlusClientReal real, string cameraId)
         {
@@ -258,8 +259,9 @@ namespace RustPlusDesk.Views
                         _lastSentButtons = CameraButtons.None;
                     }
 
-                    // Dinamik FPV: Drone durduğunda otomatik HD moda dön
-                    if (TrackingService.DroneDynamicFpvEnabled && !_isManualTurboFpv && _session.IsTurboFpvMode)
+                    // Dinamik FPV: Drone ve kamera durduğunda otomatik HD moda dön (fare veya joystick hareketi de durduysa)
+                    bool mouseMoving = (DateTime.UtcNow - _lastMouseMoveUtc).TotalMilliseconds < 350;
+                    if (!mouseMoving && !_joyActive && TrackingService.DroneDynamicFpvEnabled && !_isManualTurboFpv && _session.IsTurboFpvMode)
                     {
                         _session.IsTurboFpvMode = false;
                         UpdateTurboFpvButtonVisual();
@@ -532,6 +534,11 @@ namespace RustPlusDesk.Views
         {
             if (_session == null) return;
             _joyActive = true;
+            if (TrackingService.DroneDynamicFpvEnabled && !_session.IsTurboFpvMode)
+            {
+                _session.IsTurboFpvMode = true;
+                UpdateTurboFpvButtonVisual();
+            }
             MovementPad.CaptureMouse();
             JoyUpdate(e.GetPosition(MovementPad));
             StartContinuous(JoystickTick);
@@ -550,6 +557,11 @@ namespace RustPlusDesk.Views
             _joyX = _joyY = 0;
             RecenterThumb();
             StopContinuous();
+            if (TrackingService.DroneDynamicFpvEnabled && !_isManualTurboFpv && _session?.IsTurboFpvMode == true)
+            {
+                _session.IsTurboFpvMode = false;
+                UpdateTurboFpvButtonVisual();
+            }
         }
 
         private void RecenterThumb()
@@ -683,6 +695,12 @@ namespace RustPlusDesk.Views
             if (Math.Abs(dx) > 0.5 || Math.Abs(dy) > 0.5)
             {
                 _lastMousePos = pos;
+                _lastMouseMoveUtc = DateTime.UtcNow;
+                if (TrackingService.DroneDynamicFpvEnabled && !_session.IsTurboFpvMode)
+                {
+                    _session.IsTurboFpvMode = true;
+                    UpdateTurboFpvButtonVisual();
+                }
                 try { await _session.LookAsync((float)dx * 0.5f, (float)-dy * 0.5f); } catch { }
             }
         }
@@ -693,6 +711,11 @@ namespace RustPlusDesk.Views
             {
                 _isMouseDown = false;
                 Img.ReleaseMouseCapture();
+                if (TrackingService.DroneDynamicFpvEnabled && !_isManualTurboFpv && _session?.IsTurboFpvMode == true)
+                {
+                    _session.IsTurboFpvMode = false;
+                    UpdateTurboFpvButtonVisual();
+                }
             }
         }
 
@@ -702,6 +725,11 @@ namespace RustPlusDesk.Views
             {
                 _isMouseDown = false;
                 Img.ReleaseMouseCapture();
+                if (TrackingService.DroneDynamicFpvEnabled && !_isManualTurboFpv && _session?.IsTurboFpvMode == true)
+                {
+                    _session.IsTurboFpvMode = false;
+                    UpdateTurboFpvButtonVisual();
+                }
             }
         }
 

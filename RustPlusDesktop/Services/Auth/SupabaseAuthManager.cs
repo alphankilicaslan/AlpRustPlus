@@ -81,7 +81,9 @@ namespace RustPlusDesk.Services.Auth
         private static DateTime LastProfileTouchUtc = DateTime.MinValue;
         private static string? LastProfileTouchIdentity;
         private static string? ConfirmedCloudSyncConsentIdentity;
+#pragma warning disable CS0414
         private static bool CloudAccountPromptShownThisSession;
+#pragma warning restore CS0414
         // ponytail: Supabase hides password presence during OAuth sessions; use a server profile flag if cross-device detection becomes necessary.
         private const string EmailPasswordAccountsCacheKey = "cloud_email_password_accounts";
         private static readonly object EmailPasswordAccountsLock = new();

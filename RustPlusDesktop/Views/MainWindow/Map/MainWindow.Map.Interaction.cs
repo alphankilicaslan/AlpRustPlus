@@ -562,8 +562,10 @@ public partial class MainWindow
             var m = MapTransform.Matrix;
             if (Math.Abs(m.M11) < 1e-4) return; // Wait for valid matrix
 
-            _currentCamX = ((WebViewHost.ActualWidth * 0.5 - offX) / s - m.OffsetX) / m.M11;
-            _currentCamY = ((WebViewHost.ActualHeight * 0.5 - offY) / s - m.OffsetY) / m.M22;
+            double hostWidth = WebViewHost?.ActualWidth ?? 0;
+            double hostHeight = WebViewHost?.ActualHeight ?? 0;
+            _currentCamX = ((hostWidth * 0.5 - offX) / s - m.OffsetX) / m.M11;
+            _currentCamY = ((hostHeight * 0.5 - offY) / s - m.OffsetY) / m.M22;
             
             // Safety check for Pampa jumps
             if (double.IsNaN(_currentCamX.Value) || Math.Abs(_currentCamX.Value) > 20000) _currentCamX = _camTargetX;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -196,8 +196,9 @@ namespace RustPlusDesk.Views
                 string camId = kvp.Value;
                 if (string.IsNullOrWhiteSpace(camId)) continue;
 
-                // Drone Dusme Korumasi: Havadaki drone'un motorlari durup dusmesin!
-                if (_activeSessions.TryGetValue(slotIndex, out var ses) && ses.IsDrone)
+                // Drone Düşme Koruması: Havadaki drone'un motorları durup düşmesin!
+                if (_activeSessions.TryGetValue(slotIndex, out var ses) &&
+                    (ses.IsDrone || ses.ControlFlags.HasFlag(CameraControlFlags.Movement)))
                 {
                     continue;
                 }
@@ -1064,6 +1065,10 @@ namespace RustPlusDesk.Views
                     var dx = (float)(pos.X - slotCtrl.DragStart.X);
                     var dy = (float)(pos.Y - slotCtrl.DragStart.Y);
                     slotCtrl.DragStart = pos;
+                    if (TrackingService.DroneDynamicFpvEnabled && !_isTurboFpvEnabled && !ses.IsTurboFpvMode)
+                    {
+                        ses.IsTurboFpvMode = true;
+                    }
                     // Standard inverted Y for pitch, controlled via _sensitivityMultiplier
                     _ = ses.LookAsync(dx * _sensitivityMultiplier, -dy * _sensitivityMultiplier);
                 }
@@ -1075,6 +1080,10 @@ namespace RustPlusDesk.Views
                 {
                     slotCtrl.IsDragging = false;
                     videoContainer.ReleaseMouseCapture();
+                    if (TrackingService.DroneDynamicFpvEnabled && !_isTurboFpvEnabled && _activeSessions.TryGetValue(slotIndex, out var ses) && ses.IsTurboFpvMode)
+                    {
+                        ses.IsTurboFpvMode = false;
+                    }
                 }
             };
 
