@@ -1,0 +1,67 @@
+using System.Windows;
+using System.Diagnostics;
+
+namespace RustPlusDesk.Views.Windows
+{
+    public partial class PremiumInfoWindow : Wpf.Ui.Controls.FluentWindow
+    {
+        private const string PatreonUrl = "https://www.patreon.com/cw/Pronwan/membership";
+
+        public PremiumInfoResult Result { get; private set; } = PremiumInfoResult.StayFree;
+
+        public PremiumInfoWindow(string message)
+        {
+            InitializeComponent();
+            TxtDescription.Text = message;
+            BtnSupportNow.Content = GetText("PremiumSupportNow", "Support Now");
+            BtnStayFree.Content = GetText("PremiumStayFree", "Stay Free");
+            BtnStopSync.Content = GetText("PremiumStopSync", "Stop Sync");
+        }
+
+        private static string GetText(string key, string fallback)
+        {
+            return RustPlusDesk.Helpers.Loc.TextOrNull(key) ?? fallback;
+        }
+
+        private void BtnSupportNow_Click(object sender, RoutedEventArgs e)
+        {
+            Result = PremiumInfoResult.SupportNow;
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = PatreonUrl,
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                // Browser launch failure should not block closing the dialog.
+            }
+
+            DialogResult = true;
+            Close();
+        }
+
+        private void BtnStayFree_Click(object sender, RoutedEventArgs e)
+        {
+            Result = PremiumInfoResult.StayFree;
+            DialogResult = true;
+            Close();
+        }
+
+        private void BtnStopSync_Click(object sender, RoutedEventArgs e)
+        {
+            Result = PremiumInfoResult.StopSync;
+            DialogResult = true;
+            Close();
+        }
+    }
+
+    public enum PremiumInfoResult
+    {
+        StayFree,
+        StopSync,
+        SupportNow
+    }
+}

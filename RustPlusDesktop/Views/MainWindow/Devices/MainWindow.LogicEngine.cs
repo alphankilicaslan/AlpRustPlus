@@ -1,0 +1,712 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using RustPlusDesk.Models;
+using RustPlusDesk.Services;
+
+namespace RustPlusDesk.Views
+{
+    public partial class MainWindow
+    {
+        // Tracks if a rule is currently executing an API call (to lock manual interventions)
+        private bool _logicEngineRunningAction = false;
+        
+        // Mutex/Semaphore to ensure only one rule run runs at a time (strictly sequential)
+        private readonly SemaphoreSlim _logicEngineSemaphore = new SemaphoreSlim(1, 1);
+
+        // Public helper to check if Logic Engine is active and waiting
+        public bool IsLogicEngineActiveAndWaiting
+        {
+            get
+            {
+                var profile = _vm?.Selected;
+                if (profile == null || !profile.IsLogicEngineActive) return false;
+                return true;
+            }
+        }
+
+        // Stop the currently running Logic Engine rule
+        public void StopLogicEngineExecution()
+        {
+            LogicEngineRuntimeService.Instance.RequestStop();
+            AppendLog("[LogicEngine] Stop requested. Current rule will abort after the current operation.");
+        }
+
+        // Trigger hooks for FCM/WebSocket device updates
+        public void TriggerLogicEngineOnDeviceEvent(uint entityId, bool isOn)
+        {
+            if (!IsLogicEngineActiveAndWaiting) return;
+
+            var profile = _vm?.Selected;
+            if (profile == null || profile.LogicRules == null) return;
+
+            foreach (var rule in profile.LogicRules)
+            {
+                if (!rule.IsEnabled) continue;
+
+                // Match trigger type
+                if (rule.TriggerType == "SmartAlarm" || rule.TriggerType == "SmartSwitch")
+                {
+                    if (rule.TriggerEntityId == entityId && rule.TriggerState == isOn)
+                    {
+                        // Check trigger conditions (AND / OR)
+                        if (EvaluateTriggerCondition(rule))
+                        {
+                            _ = EnqueueRuleExecutionAsync(rule);
+                        }
+                    }
+                }
+            }
+        }
+
+        private readonly Dictionary<uint, Dictionary<string, int>> _previousStorageItemCounts = new();
+
+        // Trigger hooks for Storage Monitor / Tool Cupboard inventory updates
+        public void TriggerLogicEngineOnStorageSnapshot(uint entityId, RustPlusDesk.Models.StorageSnapshot snap)
+        {
+            if (!IsLogicEngineActiveAndWaiting) return;
+
+            var profile = _vm?.Selected;
+            if (profile == null || profile.LogicRules == null) return;
+
+            // Build current item counts
+            var currentCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            int totalItems = 0;
+            if (snap?.Items != null)
+            {
+                foreach (var item in snap.Items)
+                {
+                    var key = (item.ShortName ?? "").Trim().ToLowerInvariant();
+                    if (string.IsNullOrEmpty(key) && item.ItemId != 0)
+                    {
+                        key = ResolveItemShortName(item.ItemId);
+                    }
+                    int amt = item.Amount;
+                    totalItems += amt;
+                    if (!string.IsNullOrEmpty(key))
+                    {
+                        currentCounts[key] = currentCounts.TryGetValue(key, out var existing) ? existing + amt : amt;
+                    }
+                }
+            }
+
+            bool hasPrev = _previousStorageItemCounts.TryGetValue(entityId, out var prevCounts);
+            _previousStorageItemCounts[entityId] = currentCounts;
+
+            if (!hasPrev || prevCounts == null)
+            {
+                // First snapshot is baseline
+                return;
+            }
+
+            int prevTotal = 0;
+            foreach (var v in prevCounts.Values) prevTotal += v;
+
+            foreach (var rule in profile.LogicRules)
+            {
+                if (!rule.IsEnabled || rule.TriggerType != "StorageMonitor") continue;
+                if (rule.TriggerEntityId != entityId) continue;
+
+                var filter = (rule.StorageItemShortName ?? "*").Trim().ToLowerInvariant();
+                var cond = rule.StorageCondition ?? "ItemChanged";
+                int threshold = Math.Max(1, rule.StorageThreshold);
+
+                bool triggered = false;
+                string triggeredDetail = "";
+
+                if (cond == "Empty")
+                {
+                    if (totalItems == 0 && prevTotal > 0)
+                    {
+                        triggered = true;
+                        triggeredDetail = "Sandık tamamen boşaldı";
+                    }
+                }
+                else if (filter == "*")
+                {
+                    if (cond == "ItemChanged" && totalItems != prevTotal && Math.Abs(totalItems - prevTotal) >= threshold)
+                    {
+                        triggered = true;
+                        triggeredDetail = $"Toplam eşya değişti: {prevTotal} -> {totalItems} (fark: {totalItems - prevTotal})";
+                    }
+                    else if (cond == "ItemAdded" && totalItems > prevTotal && (totalItems - prevTotal) >= threshold)
+                    {
+                        triggered = true;
+                        triggeredDetail = $"+{totalItems - prevTotal} eşya eklendi";
+                    }
+                    else if (cond == "ItemRemoved" && totalItems < prevTotal && (prevTotal - totalItems) >= threshold)
+                    {
+                        triggered = true;
+                        triggeredDetail = $"-{prevTotal - totalItems} eşya alındı";
+                    }
+                }
+                else
+                {
+                    var filterItems = filter.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    foreach (var fi in filterItems)
+                    {
+                        int curCount = currentCounts.TryGetValue(fi, out var c) ? c : 0;
+                        int prvCount = prevCounts.TryGetValue(fi, out var p) ? p : 0;
+
+                        if (cond == "ItemChanged" && curCount != prvCount && Math.Abs(curCount - prvCount) >= threshold)
+                        {
+                            triggered = true;
+                            triggeredDetail = $"'{fi}' sayısı değişti: {prvCount} -> {curCount} (fark: {curCount - prvCount})";
+                            break;
+                        }
+                        else if (cond == "ItemAdded" && curCount > prvCount && (curCount - prvCount) >= threshold)
+                        {
+                            triggered = true;
+                            triggeredDetail = $"+{curCount - prvCount} adet '{fi}' eklendi";
+                            break;
+                        }
+                        else if (cond == "ItemRemoved" && curCount < prvCount && (prvCount - curCount) >= threshold)
+                        {
+                            triggered = true;
+                            triggeredDetail = $"-{prvCount - curCount} adet '{fi}' alındı";
+                            break;
+                        }
+                        else if (cond == "CountAbove" && curCount >= threshold && prvCount < threshold)
+                        {
+                            triggered = true;
+                            triggeredDetail = $"'{fi}' sayısı {curCount} oldu (>= {threshold})";
+                            break;
+                        }
+                        else if (cond == "CountBelow" && curCount <= threshold && prvCount > threshold)
+                        {
+                            triggered = true;
+                            triggeredDetail = $"'{fi}' sayısı {curCount} oldu (<= {threshold})";
+                            break;
+                        }
+                    }
+                }
+
+                if (triggered)
+                {
+                    AppendLog($"[Storage Otomasyonu] '{rule.Name}' tetiklendi ({triggeredDetail})");
+                    _ = EnqueueRuleExecutionAsync(rule);
+                }
+            }
+        }
+
+        // Trigger hooks for Chat Commands
+        public void TriggerLogicEngineOnChatCommand(string cmdText)
+        {
+            if (!IsLogicEngineActiveAndWaiting) return;
+            if (_chatFeaturesBlockedByMaster) return;
+
+            var profile = _vm?.Selected;
+            if (profile == null || profile.LogicRules == null) return;
+
+            var prefix = profile.ChatCommandPrefix ?? "!";
+            var cmd = cmdText.Trim().ToLowerInvariant();
+            if (cmd.StartsWith(prefix))
+            {
+                cmd = cmd.Substring(prefix.Length).Trim();
+            }
+
+            foreach (var rule in profile.LogicRules)
+            {
+                if (!rule.IsEnabled || rule.TriggerType != "ChatCommand") continue;
+
+                var ruleCmd = rule.TriggerCommand?.Trim().ToLowerInvariant() ?? "";
+                if (ruleCmd.StartsWith(prefix))
+                {
+                    ruleCmd = ruleCmd.Substring(prefix.Length).Trim();
+                }
+
+                if (ruleCmd == cmd)
+                {
+                    if (EvaluateTriggerCondition(rule))
+                    {
+                        _ = EnqueueRuleExecutionAsync(rule);
+                    }
+                }
+            }
+        }
+
+        private void TriggerLogicEngineOnRuleCompleted(string completedRuleId)
+        {
+            if (!IsLogicEngineActiveAndWaiting) return;
+
+            var rules = _vm?.Selected?.LogicRules;
+            if (rules == null) return;
+
+            foreach (var rule in rules.Where(r => r.IsEnabled
+                && r.TriggerType == "RuleCompleted"
+                && r.TriggerRuleId == completedRuleId).ToList())
+            {
+                if (EvaluateTriggerCondition(rule))
+                    _ = EnqueueRuleExecutionAsync(rule);
+            }
+        }
+
+        private void TriggerLogicEngineOnRuleTriggered(LogicRule triggeredRule)
+        {
+            if (!IsLogicEngineActiveAndWaiting) return;
+
+            var rules = _vm?.Selected?.LogicRules;
+            if (rules == null) return;
+
+            foreach (var rule in rules.Where(r => r.IsEnabled
+                && r.TriggerType == "RuleTriggered"
+                && r.TriggerRuleId == triggeredRule.Id).ToList())
+            {
+                if (rule.Id == triggeredRule.Id)
+                {
+                    AppendLog($"[LogicEngine] Rule '{rule.Name}' cannot trigger itself on start; use Loop after completion.");
+                    continue;
+                }
+
+                if (EvaluateTriggerCondition(rule))
+                    _ = EnqueueRuleExecutionAsync(rule);
+            }
+        }
+
+        private bool EvaluateTriggerCondition(LogicRule rule)
+        {
+            if (rule.ConditionOperator == "NONE" || rule.ConditionOperator == null)
+            {
+                return true;
+            }
+
+            var profile = _vm?.Selected;
+            if (profile == null) return false;
+
+            var condDev = FindDeviceById(profile.Devices, rule.ConditionDeviceEntityId);
+            if (condDev == null)
+            {
+                // Condition device deleted / missing, condition cannot be met
+                return false;
+            }
+
+            bool condState = condDev.IsOn ?? false;
+            bool targetState = rule.ConditionDeviceState;
+
+            if (rule.ConditionOperator == "AND")
+            {
+                return condState == targetState;
+            }
+            else if (rule.ConditionOperator == "OR")
+            {
+                // For trigger + OR condition, either the main trigger event happened OR condition is true.
+                // In typical triggers, since the event just occurred, OR makes it trigger anyway.
+                return true; 
+            }
+
+            return true;
+        }
+
+        private async Task EnqueueRuleExecutionAsync(LogicRule rule, int? remainingLoopCount = null)
+        {
+            var runtime = LogicEngineRuntimeService.Instance;
+            AppendLog($"[LogicEngine] Rule '{rule.Name}' triggered. Enqueuing...");
+            bool lockTaken = false;
+            bool pending = false;
+            try
+            {
+                await Dispatcher.InvokeAsync(() => runtime.PendingRules.Add(rule.Name));
+                pending = true;
+
+                // Wait to execute sequentially
+                await _logicEngineSemaphore.WaitAsync();
+                lockTaken = true;
+
+                await Dispatcher.InvokeAsync(() => runtime.PendingRules.Remove(rule.Name));
+                pending = false;
+
+                if (_chatFeaturesBlockedByMaster && rule.TriggerType == "ChatCommand")
+                {
+                    AppendLog($"[LogicEngine] Rule '{rule.Name}' execution aborted: Blocked by active Chat Master: {_chatFeatureMasterName}");
+                    return;
+                }
+
+                using var cts = new CancellationTokenSource();
+                runtime.CurrentCancellation = cts;
+                runtime.IsRunning = true;
+                runtime.CurrentRuleName = rule.Name;
+                runtime.CurrentStepNumber = 0;
+                runtime.CurrentStepType = null;
+                TriggerLogicEngineOnRuleTriggered(rule);
+
+                try
+                {
+                    await RunRuleStepsAsync(rule, cts.Token);
+                    if (rule.IsLoopEnabled)
+                    {
+                        if (rule.Steps.Any(step => step.StepType == "Wait" && step.WaitSeconds > 0))
+                        {
+                            int remaining = remainingLoopCount ?? (rule.LoopCount == 0 ? -1 : rule.LoopCount);
+                            if (remaining != 0)
+                                _ = EnqueueRuleExecutionAsync(rule, remaining < 0 ? -1 : remaining - 1);
+                        }
+                        else
+                            AppendLog($"[LogicEngine] Rule '{rule.Name}' loop skipped: add a Wait step greater than 0 seconds.");
+                    }
+                    TriggerLogicEngineOnRuleCompleted(rule.Id);
+                }
+                finally
+                {
+                    runtime.IsRunning = false;
+                    runtime.CurrentRuleName = null;
+                    runtime.CurrentStepNumber = 0;
+                    runtime.CurrentStepType = null;
+                    runtime.CurrentCancellation = null;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                AppendLog($"[LogicEngine] Rule '{rule.Name}' execution was stopped.");
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[LogicEngine] Rule '{rule.Name}' error: {ex.Message}");
+                await HandleRuleFailureAsync(rule, $"Rule '{rule.Name}' failed: {ex.Message}");
+            }
+            finally
+            {
+                if (pending)
+                    await Dispatcher.InvokeAsync(() => runtime.PendingRules.Remove(rule.Name));
+                if (lockTaken)
+                    _logicEngineSemaphore.Release();
+            }
+        }
+
+        private async Task RunRuleStepsAsync(LogicRule rule, CancellationToken cancellationToken)
+        {
+            var runtime = LogicEngineRuntimeService.Instance;
+            AppendLog($"[LogicEngine] Starting execution of rule '{rule.Name}'...");
+            int stepNum = 0;
+            foreach (var step in rule.Steps)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                stepNum++;
+                runtime.CurrentStepNumber = stepNum;
+                runtime.CurrentStepType = step.StepType;
+                AppendLog($"[LogicEngine] Running step {stepNum} ({step.StepType}) for rule '{rule.Name}'...");
+
+                // Strict Cooldown/Mutex check: if manual action is already running, wait.
+                while (_globalToggleBusy || _refreshAllBusy == 1)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await Task.Delay(500, cancellationToken);
+                }
+
+                if (step.StepType == "Wait")
+                {
+                    await Task.Delay(step.WaitSeconds * 1000, cancellationToken);
+                }
+                else if (step.StepType == "Toggle")
+                {
+                    await ExecuteToggleStepAsync(step, cancellationToken);
+                }
+                else if (step.StepType == "StartTimer")
+                {
+                    await ExecuteStartTimerStepAsync(step);
+                }
+                else if (step.StepType == "CheckAvailability")
+                {
+                    bool conditionMet = await ExecuteCheckAvailabilityStepAsync(step, rule, cancellationToken);
+                    if (!conditionMet)
+                    {
+                        AppendLog($"[LogicEngine] Gating condition failed for rule '{rule.Name}'. Aborting rule execution.");
+                        break;
+                    }
+                }
+            }
+            AppendLog($"[LogicEngine] Completed execution of rule '{rule.Name}'.");
+        }
+
+        /// <summary>
+        /// Starts a countdown. Two quite different things behind one step, because to the
+        /// player they are the same act.
+        ///
+        /// Picking an oil rig hands the timer to MonumentWatcher, which already owns the
+        /// crate marker, the reminder schedule and the answer to the chat command — the same
+        /// path the Chinook tracking used before those markers stopped arriving. Anything
+        /// else becomes an ordinary custom timer, indistinguishable from one made by hand.
+        /// </summary>
+        private async Task ExecuteStartTimerStepAsync(LogicStep step)
+        {
+            var profile = _vm?.Selected;
+            if (profile == null) return;
+
+            int minutes = Math.Max(1, step.TimerMinutes);
+            string? rigName = step.OilRigName;
+
+            if (rigName != null)
+            {
+                bool started = _monumentWatcher.TriggerExternal(rigName, minutes * 60, step.ShowCrateOnMap);
+                AppendLog(started
+                    ? $"[LogicEngine] Started {minutes} min hack timer for {rigName}" +
+                      (step.ShowCrateOnMap ? " (crate shown on map)." : " (no map marker).")
+                    : $"[LogicEngine] {rigName} already has a running timer — left it alone.");
+                return;
+            }
+
+            // Plain timer. Same ceiling as the manual dialog, since they share the list.
+            string name = string.IsNullOrWhiteSpace(step.TimerName) ? "Timer" : step.TimerName.Trim();
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (profile.CustomTimers.Count >= 5)
+                {
+                    AppendLog($"[LogicEngine] Cannot start timer '{name}': the five-timer limit is reached.");
+                    return;
+                }
+
+                // Replace rather than stack: a rule that fires twice means the same countdown
+                // restarted, and two entries with one name cannot be told apart afterwards.
+                var existing = profile.CustomTimers.FirstOrDefault(
+                    t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase));
+                if (existing != null) profile.CustomTimers.Remove(existing);
+
+                string cmd = new string(name.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+                if (cmd.Length == 0) cmd = "timer";
+
+                profile.CustomTimers.Add(new CustomTimer
+                {
+                    Name = name,
+                    Command = cmd,
+                    EndTimeUtc = DateTime.UtcNow.AddMinutes(minutes),
+                    CreatedNotified = false,
+                    // Suppress milestones the timer starts below, exactly as the manual path does.
+                    Notified60 = minutes <= 60,
+                    Notified30 = minutes <= 30,
+                    Notified10 = minutes <= 10,
+                    Notified3 = minutes <= 3,
+                });
+
+                Ach.Unlock(Ach.Timer);
+                AppendLog($"[LogicEngine] Started {minutes} min timer '{name}'.");
+
+                if (profile.AlertCustomTimer)
+                {
+                    var msg = string.Format(Properties.Resources.TimerCreated,
+                        profile.ChatCommandPrefix + cmd, 0, minutes, 0);
+                    _ = SendTeamChatSafeAsync(msg, false, true);
+                    _ = DiscordBotListenerService.Instance.SendNotificationAsync("events", $"⏱️ **Timer:** {msg}");
+                }
+            });
+        }
+
+        private async Task ExecuteToggleStepAsync(LogicStep step, CancellationToken cancellationToken)
+        {
+            var profile = _vm?.Selected;
+            if (profile == null) return;
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!string.IsNullOrEmpty(step.TargetGroupName))
+            {
+                // Target is a group
+                var groupDev = profile.Devices.FirstOrDefault(d => d.IsGroup && d.Alias == step.TargetGroupName);
+                if (groupDev == null || groupDev.Children == null)
+                {
+                    throw new Exception($"Group '{step.TargetGroupName}' not found or has no devices.");
+                }
+
+                var switches = GetSwitchesRecursive(groupDev.Children);
+                if (!switches.Any()) return;
+
+                if (!await EnsureConnectedAsync()) throw new Exception("Companion app not connected.");
+
+                // If step.ToggleState is specified, force that. Otherwise invert based on first device.
+                bool targetOn = step.ToggleState ?? !switches.First().IsOn.GetValueOrDefault(false);
+
+                // Set Action Mutex
+                _logicEngineRunningAction = true;
+                try
+                {
+                    foreach (var sw in switches)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (sw.IsOn == targetOn) continue;
+
+                        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                        cts.CancelAfter(TimeSpan.FromSeconds(5));
+                        await _rust.ToggleSmartSwitchAsync(sw.EntityId, targetOn, cts.Token);
+                        sw.IsOn = targetOn;
+                        await Task.Delay(800, cancellationToken); // Wait between toggle calls
+                    }
+                }
+                finally
+                {
+                    _logicEngineRunningAction = false;
+                }
+            }
+            else
+            {
+                // Target is single switch
+                var dev = FindDeviceById(profile.Devices, step.TargetEntityId);
+                if (dev == null) throw new Exception($"Target switch #{step.TargetEntityId} not found.");
+                if (dev.IsMissing) throw new Exception($"Target switch #{step.TargetEntityId} is offline/missing.");
+
+                if (!await EnsureConnectedAsync()) throw new Exception("Companion app not connected.");
+
+                bool targetOn = step.ToggleState ?? !(dev.IsOn ?? false);
+
+                // Set Action Mutex
+                _logicEngineRunningAction = true;
+                try
+                {
+                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    cts.CancelAfter(TimeSpan.FromSeconds(5));
+                    await _rust.ToggleSmartSwitchAsync(dev.EntityId, targetOn, cts.Token);
+                    dev.IsOn = targetOn;
+                    await Task.Delay(800, cancellationToken);
+                }
+                finally
+                {
+                    _logicEngineRunningAction = false;
+                }
+            }
+        }
+
+        private async Task<bool> ExecuteCheckAvailabilityStepAsync(LogicStep step, LogicRule rule, CancellationToken cancellationToken)
+        {
+            var profile = _vm?.Selected;
+            if (profile == null) return false;
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Wait until manual refresh finishes if busy, then run a single refresh
+            while (_refreshAllBusy == 1)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await Task.Delay(500, cancellationToken);
+            }
+
+            // Set Action Mutex
+            _logicEngineRunningAction = true;
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                AppendLog("[LogicEngine] Refreshing device availability states...");
+                await RefreshAllDevicesStatusAsync();
+            }
+            finally
+            {
+                _logicEngineRunningAction = false;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            bool conditionMet = false;
+
+            if (step.TargetEntityId != 0)
+            {
+                var dev = FindDeviceById(profile.Devices, step.TargetEntityId);
+                bool isOffline = (dev == null || dev.IsMissing);
+
+                if (step.ConditionOperator == "IS_OFFLINE" || step.ConditionOperator == "ALL_OFFLINE" || step.ConditionOperator == "ANY_OFFLINE")
+                {
+                    conditionMet = isOffline;
+                }
+                else if (step.ConditionOperator == "IS_ONLINE" || step.ConditionOperator == "ALL_ONLINE" || step.ConditionOperator == "ANY_ONLINE")
+                {
+                    conditionMet = !isOffline;
+                }
+            }
+            else
+            {
+                var deviceIds = step.ConditionDeviceIdsCsv
+                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => uint.TryParse(s.Trim(), out var id) ? id : 0)
+                    .Where(id => id != 0)
+                    .ToList();
+
+                if (!deviceIds.Any()) return false;
+
+                var offlineCount = 0;
+                var onlineCount = 0;
+
+                foreach (var id in deviceIds)
+                {
+                    var dev = FindDeviceById(profile.Devices, id);
+                    if (dev == null || dev.IsMissing)
+                    {
+                        offlineCount++;
+                    }
+                    else
+                    {
+                        onlineCount++;
+                    }
+                }
+
+                if (step.ConditionOperator == "ALL_OFFLINE")
+                {
+                    conditionMet = offlineCount == deviceIds.Count;
+                }
+                else if (step.ConditionOperator == "ANY_OFFLINE")
+                {
+                    conditionMet = offlineCount > 0;
+                }
+                else if (step.ConditionOperator == "ALL_ONLINE")
+                {
+                    conditionMet = onlineCount == deviceIds.Count;
+                }
+                else if (step.ConditionOperator == "ANY_ONLINE")
+                {
+                    conditionMet = onlineCount > 0;
+                }
+            }
+
+            if (conditionMet)
+            {
+                AppendLog($"[LogicEngine] Availability condition '{step.ConditionOperator}' met. Executing conditional steps...");
+                foreach (var condStep in step.ConditionalSteps)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    while (_globalToggleBusy || _refreshAllBusy == 1)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        await Task.Delay(500, cancellationToken);
+                    }
+
+                    if (condStep.StepType == "Wait")
+                    {
+                        await Task.Delay(condStep.WaitSeconds * 1000, cancellationToken);
+                    }
+                    else if (condStep.StepType == "Toggle")
+                    {
+                        await ExecuteToggleStepAsync(condStep, cancellationToken);
+                    }
+                    else if (condStep.StepType == "StartTimer")
+                    {
+                        await ExecuteStartTimerStepAsync(condStep);
+                    }
+                }
+            }
+            return conditionMet;
+        }
+
+        private async Task HandleRuleFailureAsync(LogicRule rule, string errorMsg)
+        {
+            var profile = _vm?.Selected;
+            if (profile == null) return;
+
+            // Chat Alert
+            await Dispatcher.InvokeAsync(() =>
+            {
+                AddIncomingChatMessage("LogicEngine", $"⚠️ {errorMsg}");
+            });
+
+            // Discord Event Channel Alert
+            if (RustPlusDesk.Services.Auth.SupabaseAuthManager.IsPremium)
+            {
+                try
+                {
+                    await DiscordBotListenerService.Instance.SendNotificationAsync("events", $"[LogicEngine] {errorMsg}");
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"[LogicEngine] Failed to send Discord error notification: {ex.Message}");
+                }
+            }
+        }
+    }
+}

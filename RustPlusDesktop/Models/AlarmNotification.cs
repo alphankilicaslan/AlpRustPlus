@@ -1,0 +1,23 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace RustPlusDesk.Models;
+
+    
+
+    public record AlarmNotification(
+        DateTime Timestamp,
+        string Server,
+        string DeviceName,
+        uint? EntityId,
+        string Message,
+        string? Ip = null,
+        int? Port = null,
+        string? Title = null,
+        string? FcmNotificationId = null,
+        DateTime? EventTime = null
+    );
+

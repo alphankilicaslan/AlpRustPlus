@@ -1,0 +1,76 @@
+<ui:FluentWindow x:Class="RustPlusDesk.Views.CloudDisclaimerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="{DynamicResource CloudSync}"
+        Width="460" Height="410"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Foreground="White"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="{DynamicResource PrivacyDisclaimerTitle}" ShowMaximize="False" ShowMinimize="False" ShowClose="False">
+            <ui:TitleBar.Icon>
+                <ui:SymbolIcon Symbol="Cloud24"/>
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
+        <Grid Grid.Row="1" Margin="25,4,25,25">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Content (Premium Blue Card) -->
+            <StackPanel Grid.Row="0" Margin="10,10,10,10" VerticalAlignment="Center">
+                <Border Background="#101F35" BorderBrush="#1D4ED8" BorderThickness="1" CornerRadius="10" Padding="18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <ui:SymbolIcon Symbol="Info24" FontSize="16" Foreground="#3B82F6" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{DynamicResource PrivacyDisclaimerTitle}" FontWeight="Bold" Foreground="#3B82F6" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock TextWrapping="Wrap" Foreground="#CCDDEE" FontSize="12.5" LineHeight="18" Text="{DynamicResource PrivacyDisclaimerDesc}"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Footer -->
+            <Border Grid.Row="1" Margin="0,15,0,0" Padding="0,15,0,0" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardBorder}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <ui:Button Grid.Column="1"
+                            Content="{DynamicResource DeclineCloud}"
+                            Appearance="Secondary"
+                            Padding="20,8"
+                            FontSize="13"
+                            FontWeight="SemiBold"
+                            Cursor="Hand"
+                            Margin="0,0,10,0"
+                            Click="BtnDecline_Click" />
+
+                    <ui:Button Grid.Column="2"
+                            Content="{DynamicResource AcceptCloud}"
+                            Appearance="Primary"
+                            Padding="30,8"
+                            FontSize="14"
+                            FontWeight="SemiBold"
+                            Cursor="Hand"
+                            Click="BtnAccept_Click" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

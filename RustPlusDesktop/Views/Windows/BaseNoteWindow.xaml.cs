@@ -1,0 +1,49 @@
+using System;
+using System.Windows;
+using System.Windows.Input;
+
+namespace RustPlusDesk.Views.Windows
+{
+    public partial class BaseNoteWindow : Wpf.Ui.Controls.FluentWindow
+    {
+        public string? NoteResult { get; private set; }
+
+        public BaseNoteWindow(string? initialNote)
+        {
+            InitializeComponent();
+            ApplyLocalizedText();
+            TxtNote.Text = initialNote ?? "";
+            TxtNote.Focus();
+            if (!string.IsNullOrEmpty(TxtNote.Text))
+            {
+                TxtNote.Select(TxtNote.Text.Length, 0); // Position cursor at the end
+            }
+        }
+
+        private static string T(string key, string fallback)
+        {
+            return RustPlusDesk.Helpers.Loc.TextOrNull(key) ?? fallback;
+        }
+
+        private void ApplyLocalizedText()
+        {
+            Title = T("BaseNoteWindowTitle", "Edit Base Note");
+            TxtTitle.Text = T("BaseNoteTitle", "Base Note");
+            BtnSave.Content = T("Save", "Save");
+            BtnCancel.Content = T("Cancel", "Cancel");
+        }
+
+        private void BtnCancel_Click(object sender, RoutedEventArgs e)
+        {
+            DialogResult = false;
+            Close();
+        }
+
+        private void BtnSave_Click(object sender, RoutedEventArgs e)
+        {
+            NoteResult = TxtNote.Text;
+            DialogResult = true;
+            Close();
+        }
+    }
+}

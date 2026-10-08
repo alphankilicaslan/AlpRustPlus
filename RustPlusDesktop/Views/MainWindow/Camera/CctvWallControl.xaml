@@ -1,0 +1,168 @@
+<UserControl
+    x:Class="RustPlusDesk.Views.CctvWallControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    d:DesignHeight="700"
+    d:DesignWidth="1100"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <Style x:Key="LayoutBtnStyle" TargetType="Button">
+            <Setter Property="Background" Value="#222730" />
+            <Setter Property="Foreground" Value="#E5E7EB" />
+            <Setter Property="BorderBrush" Value="#374151" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Padding" Value="5,2" />
+            <Setter Property="Margin" Value="1,0" />
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#374151" />
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#4B5563" />
+                            </Trigger>
+                            <Trigger Property="Tag" Value="Active">
+                                <Setter TargetName="bd" Property="Background" Value="#10B981" />
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#34D399" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Background="#090B0E">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- TOP BAR: Slim 26-28px bar with layout chips, FPS selector, and Map button -->
+        <Border Grid.Row="0" Background="#12151B" BorderBrush="#1F242D" BorderThickness="0,0,0,1" Padding="8,3">
+            <DockPanel LastChildFill="True">
+                <!-- Return to Map Button (Right docked) -->
+                <Button x:Name="BtnBackToMap" DockPanel.Dock="Right" Style="{StaticResource LayoutBtnStyle}"
+                        Background="#1E293B" BorderBrush="#3B82F6" Foreground="#60A5FA"
+                        Padding="8,2" Click="BtnBackToMap_Click" ToolTip="Kamera modundan çık ve haritaya dön">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Map24" FontSize="13" Margin="0,0,5,0" VerticalAlignment="Center" />
+                        <TextBlock Text="🗺️ Harita Modu" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <!-- Left Group: Compact Title, Layout buttons, FPS -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,10,0" VerticalAlignment="Center">
+                        <ui:SymbolIcon Symbol="CameraDome24" Foreground="#10B981" FontSize="14" Margin="0,0,5,0" VerticalAlignment="Center" />
+                        <TextBlock Text="CCTV" Foreground="White" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <Border Width="1" Height="14" Background="#262D38" Margin="0,0,10,0" VerticalAlignment="Center" />
+
+                    <TextBlock Text="Kameralar:" Foreground="#9CA3AF" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0" />
+
+                    <!-- Layout selection buttons: 1, 2, 4, 6, 8, 9, 10, 12 -->
+                    <StackPanel x:Name="LayoutButtonsPanel" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="1" Tag="1" Style="{StaticResource LayoutBtnStyle}" Click="LayoutBtn_Click" />
+                        <Button Content="2" Tag="2" Style="{StaticResource LayoutBtnStyle}" Click="LayoutBtn_Click" />
+                        <Button Content="4" Tag="4" Style="{StaticResource LayoutBtnStyle}" Click="LayoutBtn_Click" />
+                        <Button Content="6" Tag="6" Style="{StaticResource LayoutBtnStyle}" Click="LayoutBtn_Click" />
+                        <Button Content="8" Tag="8" Style="{StaticResource LayoutBtnStyle}" Click="LayoutBtn_Click" />
+                        <Button Content="9" Tag="9" Style="{StaticResource LayoutBtnStyle}" Click="LayoutBtn_Click" />
+                        <Button Content="10" Tag="10" Style="{StaticResource LayoutBtnStyle}" Click="LayoutBtn_Click" />
+                        <Button Content="12" Tag="12" Style="{StaticResource LayoutBtnStyle}" Click="LayoutBtn_Click" />
+                    </StackPanel>
+
+                    <Border Width="1" Height="14" Background="#262D38" Margin="10,0,10,0" VerticalAlignment="Center" />
+
+                    <TextBlock Text="FPS:" Foreground="#9CA3AF" FontSize="11" VerticalAlignment="Center" Margin="0,0,5,0" />
+                    <ComboBox x:Name="CmbWallFps" Width="78" Height="22" Padding="4,1" FontSize="11" VerticalAlignment="Center"
+                              SelectionChanged="CmbWallFps_SelectionChanged">
+                        <ComboBoxItem Content="5 FPS" />
+                        <ComboBoxItem Content="10 FPS" />
+                        <ComboBoxItem Content="15 FPS" IsSelected="True" />
+                        <ComboBoxItem Content="30 FPS" />
+                        <ComboBoxItem Content="60 FPS" />
+                        <ComboBoxItem Content="120 FPS" />
+                        <ComboBoxItem Content="Max" />
+                    </ComboBox>
+
+                    <Border Width="1" Height="14" Background="#262D38" Margin="10,0,10,0" VerticalAlignment="Center" />
+
+                    <TextBlock Text="Hassasiyet:" Foreground="#9CA3AF" FontSize="11" VerticalAlignment="Center" Margin="0,0,5,0" />
+                    <ComboBox x:Name="CmbSensitivity" Width="92" Height="22" Padding="4,1" FontSize="11" VerticalAlignment="Center"
+                              SelectionChanged="CmbSensitivity_SelectionChanged">
+                        <ComboBoxItem Content="Çok Yavaş" Tag="0.02" />
+                        <ComboBoxItem Content="Yavaş" Tag="0.04" />
+                        <ComboBoxItem Content="Normal" Tag="0.06" IsSelected="True" />
+                        <ComboBoxItem Content="Hızlı" Tag="0.10" />
+                        <ComboBoxItem Content="Çok Hızlı" Tag="0.16" />
+                    </ComboBox>
+
+                    <Border Width="1" Height="14" Background="#262D38" Margin="10,0,10,0" VerticalAlignment="Center" />
+
+                    <!-- Refresh All (Safe - Skips Drones) -->
+                    <Button x:Name="BtnRefreshAll" Style="{StaticResource LayoutBtnStyle}"
+                            Padding="8,2" Click="BtnRefreshAll_Click" Margin="0,0,6,0"
+                            ToolTip="Tüm aktif kameraları yeniden bağlar (Droneların havada düşmemesi için dronelar hariç tutulur).">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="↻" FontSize="12" FontWeight="Bold" Margin="0,0,4,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Tümünü Yenile" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Turbo FPV Mode Toggle Button -->
+                    <Button x:Name="BtnToggleTurboFpv" Style="{StaticResource LayoutBtnStyle}"
+                            Padding="8,2" Click="BtnToggleTurboFpv_Click" Margin="0,0,6,0"
+                            ToolTip="Düşük çözünürlüklü süper piksel FPV modu (1-2 pakette tüm ekranı doldurur, sıfır gecikme sağlar).">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="TxtTurboFpvIcon" Text="⚡" FontSize="11" Margin="0,0,4,0" VerticalAlignment="Center" />
+                            <TextBlock x:Name="TxtTurboFpvStatus" Text="Turbo FPV: Kapalı" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Thermal Mode Toggle Button -->
+                    <Button x:Name="BtnToggleThermal" Style="{StaticResource LayoutBtnStyle}"
+                            Padding="8,2" Click="BtnToggleThermal_Click" Margin="0,0,6,0"
+                            ToolTip="Termal Görüş Modunu Aç/Kapat (FLIR Isı Haritası)">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="TxtThermalIcon" Text="🔥" FontSize="11" Margin="0,0,4,0" VerticalAlignment="Center" />
+                            <TextBlock x:Name="TxtThermalStatus" Text="Termal: Kapalı" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <!-- WASD Toggle Button -->
+                    <Button x:Name="BtnToggleWasd" Style="{StaticResource LayoutBtnStyle}"
+                            Padding="8,2" Click="BtnToggleWasd_Click"
+                            ToolTip="Klavye WASD ile seçili kamerayı yönlendirmeyi açar/kapatır. (Açıkken W, A, S, D tuşları kamerayı kontrol eder)">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="TxtWasdIcon" Text="⌨️" FontSize="11" Margin="0,0,4,0" VerticalAlignment="Center" />
+                            <TextBlock x:Name="TxtWasdStatus" Text="WASD: Kapalı" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- MAIN AREA: Full width Camera Wall Grid (Zero waste, 1px margin) -->
+        <Grid x:Name="CameraWallGrid" Grid.Row="1" Margin="1" Background="#090B0E">
+            <!-- Dynamically populated camera slots -->
+        </Grid>
+    </Grid>
+</UserControl>

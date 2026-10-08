@@ -1,0 +1,354 @@
+<UserControl x:Class="RustPlusDesk.Views.RecyclerOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:tutorials="clr-namespace:RustPlusDesk.Features.Tutorials"
+             mc:Ignorable="d"
+             d:DesignHeight="540" d:DesignWidth="450"
+             Background="Transparent">
+
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="DeckText" Color="#FFF4F6FA" />
+        <SolidColorBrush x:Key="DeckMuted" Color="#FF94A0B3" />
+        <SolidColorBrush x:Key="DeckLine" Color="#2CFFFFFF" />
+        <SolidColorBrush x:Key="DeckLineSoft" Color="#18FFFFFF" />
+        <SolidColorBrush x:Key="DeckInput" Color="#FF151B23" />
+        <SolidColorBrush x:Key="DeckWild" Color="#FF41F29A" />
+        <SolidColorBrush x:Key="DeckSafe" Color="#FFFF9C6C" />
+
+        <LinearGradientBrush x:Key="DeckShell" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#FD0B1015" Offset="0" />
+            <GradientStop Color="#FA111821" Offset="0.48" />
+            <GradientStop Color="#FC070A0E" Offset="1" />
+        </LinearGradientBrush>
+
+        <LinearGradientBrush x:Key="DeckHeader" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#243FD7FF" Offset="0" />
+            <GradientStop Color="#0EFFFFFF" Offset="0.55" />
+            <GradientStop Color="#16FF9C6C" Offset="1" />
+        </LinearGradientBrush>
+
+        <Style x:Key="DeckItemTile" TargetType="Border">
+            <Setter Property="Width" Value="61" />
+            <Setter Property="Height" Value="78" />
+            <Setter Property="Margin" Value="3" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Background" Value="#FF111820" />
+            <Setter Property="BorderBrush" Value="#2BFFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </UserControl.Resources>
+
+    <Border Margin="10"
+            Background="{StaticResource DeckShell}"
+            BorderBrush="#5260CDFF"
+            BorderThickness="1"
+            CornerRadius="10"
+            ClipToBounds="True">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="28" Color="Black" Opacity="0.68" ShadowDepth="0" />
+        </Border.Effect>
+
+        <Grid>
+            <Border Height="3"
+                    VerticalAlignment="Top"
+                    Background="{StaticResource DeckHeader}" />
+
+            <Grid Margin="14,13,14,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="216" />
+                    <RowDefinition Height="*" MinHeight="230" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0" Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Image Width="48"
+                               Height="48"
+                               RenderOptions.BitmapScalingMode="HighQuality"
+                               Source="pack://application:,,,/Assets/icons/recycler.png" />
+
+                        <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{DynamicResource Update700Title3}"
+                                       FontSize="17"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource DeckText}" />
+                            <TextBlock Text="{DynamicResource UiInventoryInRecyclerYieldOut}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource DeckMuted}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <ui:Button Grid.Column="1"
+                               Width="32"
+                               Height="32"
+                               Padding="0"
+                               Appearance="Transparent"
+                               Click="BtnClose_Click"
+                               Icon="{ui:SymbolIcon Symbol=Dismiss24}" />
+                </Grid>
+
+                <Grid Grid.Row="1" Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="124" />
+                    </Grid.ColumnDefinitions>
+
+                    <ui:TextBox x:Name="SearchTextBox" tutorials:Tutorial.TargetId="Recycler.Search"
+                                Grid.Column="0"
+                                Height="34"
+                                Margin="0,0,8,0"
+                                Padding="12,0,12,3"
+                                PlaceholderText="{DynamicResource UiSearchComponents}"
+                                Icon="Search24"
+                                Background="{StaticResource DeckInput}"
+                                BorderBrush="{StaticResource DeckLine}"
+                                Foreground="{StaticResource DeckText}"
+                                FontSize="12"
+                                VerticalContentAlignment="Center"
+                                TextChanged="SearchTextBox_TextChanged" />
+
+                    <ComboBox x:Name="CategoryComboBox" tutorials:Tutorial.TargetId="Recycler.Category"
+                              Grid.Column="1"
+                              Height="34"
+                              Padding="9,3"
+                              Background="{StaticResource DeckInput}"
+                              BorderBrush="{StaticResource DeckLine}"
+                              Foreground="{StaticResource DeckText}"
+                              FontSize="12"
+                              SelectionChanged="CategoryComboBox_SelectionChanged" />
+                </Grid>
+
+                <Border Grid.Row="2"
+                        Background="#D80A0F15"
+                        BorderBrush="{StaticResource DeckLineSoft}"
+                        BorderThickness="1"
+                        CornerRadius="9"
+                        Padding="7">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                            <TextBlock Text="{DynamicResource UiITEMBAY}"
+                                       FontSize="10"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource DeckMuted}" />
+                            <TextBlock Text="{DynamicResource UiScrollOrShiftClickChangesBy10}"
+                                       DockPanel.Dock="Right"
+                                       FontSize="10"
+                                       Foreground="#6F7A8D"
+                                       HorizontalAlignment="Right" />
+                        </DockPanel>
+
+                        <ScrollViewer x:Name="InputsScrollViewer" tutorials:Tutorial.TargetId="Recycler.Inputs"
+                                      Grid.Row="1"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      ScrollChanged="InputsScrollViewer_ScrollChanged">
+                            <ItemsControl x:Name="InputsControl">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Columns="5" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource DeckItemTile}"
+                                                PreviewMouseWheel="ItemCard_MouseWheel"
+                                                PreviewMouseLeftButtonDown="ItemCard_LeftClick"
+                                                PreviewMouseRightButtonDown="ItemCard_RightClick"
+                                                ToolTipService.InitialShowDelay="200">
+                                            <ToolTipService.ToolTip>
+                                                <ToolTip Content="{Binding DisplayName}" Background="#1F2228" Foreground="White" BorderBrush="{DynamicResource WhiteA25}" />
+                                            </ToolTipService.ToolTip>
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="*" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+
+                                                <Border Grid.Row="0"
+                                                        Margin="5,5,5,2"
+                                                        Background="#10000000"
+                                                        CornerRadius="6">
+                                                    <Image Width="34"
+                                                           Height="34"
+                                                           Source="{Binding Icon}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           IsHitTestVisible="False" />
+                                                </Border>
+
+                                                <ui:TextBox Grid.Row="1"
+                                                            Height="24"
+                                                            Margin="5,0,5,5"
+                                                            Padding="0,2,0,2"
+                                                            Text="{Binding Quantity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                            ClearButtonEnabled="False"
+                                                            HorizontalContentAlignment="Center"
+                                                            VerticalContentAlignment="Center"
+                                                            FontSize="11"
+                                                            FontWeight="Bold"
+                                                            BorderThickness="1"
+                                                            BorderBrush="#32FFFFFF"
+                                                            Background="#FF070A0E"
+                                                            Foreground="{StaticResource DeckText}"
+                                                            PreviewTextInput="QuantityTextBox_PreviewTextInput"
+                                                            DataObject.Pasting="QuantityTextBox_Pasting"
+                                                            GotFocus="QuantityTextBox_GotFocus"
+                                                            LostFocus="QuantityTextBox_LostFocus" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="3"
+                        Margin="0,10,0,0"
+                        Background="#EF0D1118"
+                        BorderBrush="{StaticResource DeckLine}"
+                        BorderThickness="1"
+                        CornerRadius="9"
+                        Padding="8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="96" />
+                                <ColumnDefinition Width="96" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{DynamicResource UiYIELDBOARD}"
+                                       FontSize="10"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource DeckMuted}" />
+                            <TextBlock Grid.Column="1" Text="{DynamicResource UiWILD}" FontSize="10" FontWeight="Bold" Foreground="{StaticResource DeckWild}" HorizontalAlignment="Center" ToolTip="{DynamicResource UiText100YieldMonuments}" />
+                            <TextBlock Grid.Column="2" Text="{DynamicResource UiOUTPOST}" FontSize="10" FontWeight="Bold" Foreground="{StaticResource DeckSafe}" HorizontalAlignment="Center" ToolTip="{DynamicResource UiOutpostSafezoneRecycler}" />
+                        </Grid>
+
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl x:Name="OutputsControl" tutorials:Tutorial.TargetId="Recycler.Results">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border x:Name="OutputRowBorder"
+                                                Margin="0,2"
+                                                Padding="6,4"
+                                                CornerRadius="7"
+                                                SnapsToDevicePixels="True">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="26" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="96" />
+                                                    <ColumnDefinition Width="96" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <Image Grid.Column="0" Width="20" Height="20" Source="{Binding Icon}" Margin="0,0,6,0" VerticalAlignment="Center" />
+
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding DisplayName}"
+                                                           FontSize="11.5"
+                                                           Foreground="{StaticResource DeckText}"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis" />
+
+                                                <Border Grid.Column="2"
+                                                        Width="86"
+                                                        Height="34"
+                                                        Background="#243FF29A"
+                                                        BorderBrush="#5E41F29A"
+                                                        BorderThickness="1"
+                                                        CornerRadius="6"
+                                                        HorizontalAlignment="Center"
+                                                        ToolTip="{Binding WildToolTip}">
+                                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <TextBlock FontSize="8.5" FontWeight="Bold" Foreground="{StaticResource DeckWild}" HorizontalAlignment="Center">
+                                                            <Run Text="{DynamicResource UiGuar}" /><Run Text="{Binding WildGuaranteedText, Mode=OneWay}" />
+                                                        </TextBlock>
+                                                        <TextBlock FontSize="8.5" FontWeight="Bold" Foreground="#B6FFE0" HorizontalAlignment="Center">
+                                                            <Run Text="{DynamicResource UiChance}" /><Run Text="{Binding WildChanceText, Mode=OneWay}" />
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <Border Grid.Column="3"
+                                                        Width="86"
+                                                        Height="34"
+                                                        Background="#28FF9C6C"
+                                                        BorderBrush="#62FF9C6C"
+                                                        BorderThickness="1"
+                                                        CornerRadius="6"
+                                                        HorizontalAlignment="Center"
+                                                        ToolTip="{Binding SafeToolTip}">
+                                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <TextBlock FontSize="8.5" FontWeight="Bold" Foreground="{StaticResource DeckSafe}" HorizontalAlignment="Center">
+                                                            <Run Text="{DynamicResource UiGuar}" /><Run Text="{Binding SafeGuaranteedText, Mode=OneWay}" />
+                                                        </TextBlock>
+                                                        <TextBlock FontSize="8.5" FontWeight="Bold" Foreground="#FFD4BF" HorizontalAlignment="Center">
+                                                            <Run Text="{DynamicResource UiChance}" /><Run Text="{Binding SafeChanceText, Mode=OneWay}" />
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                        <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding IsActive}" Value="False">
+                                                <Setter TargetName="OutputRowBorder" Property="Opacity" Value="0.25" />
+                                                <Setter TargetName="OutputRowBorder" Property="Background" Value="Transparent" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                <Setter TargetName="OutputRowBorder" Property="Background" Value="#12FFFFFF" />
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="4" Margin="0,10,0,0">
+                    <Border HorizontalAlignment="Left"
+                            Padding="10,5"
+                            Background="#28FFFFFF"
+                            BorderBrush="{DynamicResource WhiteA20}"
+                            BorderThickness="1"
+                            CornerRadius="8">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{DynamicResource Time}" FontSize="10" FontWeight="Bold" Foreground="{StaticResource DeckMuted}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock x:Name="TxtWildTime" Text="00:00:00" FontSize="11.5" FontWeight="Bold" Foreground="{StaticResource DeckWild}" Margin="0,0,9,0" VerticalAlignment="Center" ToolTip="{DynamicResource UiWildRecyclerTime}" />
+                            <TextBlock x:Name="TxtSafeTime" Text="00:00:00" FontSize="11.5" FontWeight="Bold" Foreground="{StaticResource DeckSafe}" VerticalAlignment="Center" ToolTip="{DynamicResource UiOutpostRecyclerTime}" />
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <ui:Button Content="{DynamicResource UiClearAll}" Appearance="Secondary" Padding="13,6" Click="BtnClearAll_Click" Margin="0,0,8,0" FontSize="11" />
+                        <ui:Button Content="{DynamicResource UiFillStacks}" Appearance="Secondary" Padding="13,6" Click="BtnFillStacks_Click" FontSize="11" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

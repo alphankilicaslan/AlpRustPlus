@@ -1,0 +1,543 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Linq;
+using System.Net.Http;
+using RustPlusDesk.Models;
+using Velopack;
+using Velopack.Exceptions;
+using Velopack.Sources;
+
+namespace RustPlusDesk.Services
+{
+    public class UpdateService
+    {
+        private const string RepoOwner = "alphankilicaslan";
+        private const string RepoName = "AlpRustPlus";
+        private const string PendingVelopackUpdateMarker = "velopack-pending";
+        private const string InstallerAssetName = "AlpRust+-Setup.exe";
+
+        private readonly UpdateManager? _updateManager;
+        private UpdateInfo? _pendingUpdateInfo;
+        private readonly bool _isVelopackSupported;
+        private bool _isInitialized = false;
+        private readonly object _initLock = new();
+
+        public UpdateService()
+        {
+            try
+            {
+                _updateManager = new UpdateManager(
+                    new GithubSource($"https://github.com/{RepoOwner}/{RepoName}", accessToken: null, prerelease: false));
+                _isVelopackSupported = _updateManager?.IsInstalled ?? false;
+            }
+            catch
+            {
+                _updateManager = null;
+                _isVelopackSupported = false;
+            }
+        }
+
+        private void InitializeIfNeeded()
+        {
+            if (_isInitialized) return;
+            lock (_initLock)
+            {
+                if (_isInitialized) return;
+                try
+                {
+                    if (_isVelopackSupported && _updateManager?.UpdatePendingRestart != null)
+                    {
+                        _pendingInstallerPath = PendingVelopackUpdateMarker;
+                    }
+                }
+                catch { }
+                _isInitialized = true;
+            }
+        }
+
+        public static string LatestReleaseUrl => $"https://github.com/{RepoOwner}/{RepoName}/releases/latest";
+
+        private string? _pendingInstallerPath;
+        public string? PendingInstallerPath
+        {
+            get
+            {
+                InitializeIfNeeded();
+                return _pendingInstallerPath;
+            }
+            set
+            {
+                _pendingInstallerPath = value;
+            }
+        }
+
+        public string VersionRaw
+        {
+            get
+            {
+                var attr = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
+                if (attr != null && !string.IsNullOrWhiteSpace(attr.InformationalVersion))
+                    return attr.InformationalVersion;
+
+                var path = Environment.ProcessPath;
+                if (!string.IsNullOrEmpty(path))
+                {
+                    try
+                    {
+                        var fvi = FileVersionInfo.GetVersionInfo(path);
+                        if (!string.IsNullOrWhiteSpace(fvi.ProductVersion))
+                            return fvi.ProductVersion;
+                    }
+                    catch { }
+                }
+
+                return Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "0.0.0";
+            }
+        }
+
+        public string VersionShort => NormalizeVer(VersionRaw);
+
+        public Version VersionForCompare =>
+            Version.TryParse(VersionShort, out var v) ? v : new Version(0, 0, 0);
+
+        public long? LatestUpdateSize { get; private set; }
+        public bool IsDeltaAvailable { get; private set; }
+
+        public async Task<(Version latest, string tag, string? downloadUrl)?> GetLatestReleaseAsync()
+        {
+            return await OriginalGetLatestReleaseAsync();
+        }
+
+        private async Task<(Version latest, string tag, string? downloadUrl)?> OriginalGetLatestReleaseAsync()
+        {
+            InitializeIfNeeded();
+            LatestUpdateSize = null;
+            IsDeltaAvailable = false;
+            if (_isVelopackSupported && _updateManager != null)
+            {
+                try
+                {
+                    _pendingUpdateInfo = await _updateManager.CheckForUpdatesAsync();
+                    if (_pendingUpdateInfo == null)
+                    {
+                        return (VersionForCompare, $"v{VersionShort}", null);
+                    }
+
+                    string version = _pendingUpdateInfo.TargetFullRelease.Version.ToString();
+                    if (!Version.TryParse(NormalizeVer(version), out var latest))
+                    {
+                        return null;
+                    }
+
+                    if (_pendingUpdateInfo.DeltasToTarget != null && _pendingUpdateInfo.DeltasToTarget.Any())
+                    {
+                        IsDeltaAvailable = true;
+                        LatestUpdateSize = _pendingUpdateInfo.DeltasToTarget.Sum(d => d.Size);
+                    }
+                    else
+                    {
+                        IsDeltaAvailable = false;
+                        LatestUpdateSize = _pendingUpdateInfo.TargetFullRelease?.Size;
+                    }
+
+                    return (latest, $"v{version}", PendingVelopackUpdateMarker);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Velopack CheckForUpdatesAsync failed: {ex.Message}. Falling back to GitHub Releases API.");
+                }
+            }
+
+            IsDeltaAvailable = false;
+            return await GetLatestReleaseFromGitHubAsync();
+        }
+
+        private async Task<(Version latest, string tag, string? downloadUrl)?> GetLatestReleaseFromGitHubAsync()
+        {
+            try
+            {
+                using var http = new System.Net.Http.HttpClient(new TrafficTrackingHttpMessageHandler("Updates"));
+                http.DefaultRequestHeaders.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue("RustPlusDesk", VersionForCompare.ToString()));
+                http.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+                http.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+
+                var url = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
+                using var resp = await http.GetAsync(url);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                using var stream = await resp.Content.ReadAsStreamAsync();
+                using var doc = await System.Text.Json.JsonDocument.ParseAsync(stream);
+                var root = doc.RootElement;
+
+                var tag = root.GetProperty("tag_name").GetString() ?? "";
+                var assets = root.GetProperty("assets").EnumerateArray();
+
+                string? dl = null;
+                foreach (var a in assets)
+                {
+                    var name = a.GetProperty("name").GetString() ?? "";
+                    if (string.Equals(name, InstallerAssetName, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(name, "AlpRust+-Setup.exe", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(name, "RustPlusDesk-Setup.exe", StringComparison.OrdinalIgnoreCase) ||
+                        name.EndsWith("-Setup.exe", StringComparison.OrdinalIgnoreCase))
+                    {
+                        dl = a.GetProperty("browser_download_url").GetString();
+                        if (a.TryGetProperty("size", out var sizeProp))
+                        {
+                            LatestUpdateSize = sizeProp.GetInt64();
+                        }
+                        break;
+                    }
+                }
+
+                var v = NormalizeVer(tag);
+                if (!Version.TryParse(v, out var latest))
+                {
+                    return null;
+                }
+                return (latest, tag, dl);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public async Task<string?> DownloadInstallerAsync(string url, IProgress<DownloadReport>? progress = null)
+        {
+            InitializeIfNeeded();
+            if (string.Equals(url, PendingVelopackUpdateMarker, StringComparison.OrdinalIgnoreCase))
+            {
+                _downloadCts = new CancellationTokenSource();
+                try
+                {
+                    if (_updateManager == null) return null;
+                    var updateInfo = _pendingUpdateInfo ?? await _updateManager.CheckForUpdatesAsync();
+                    if (updateInfo == null) return null;
+
+                    var deltas = updateInfo.DeltasToTarget;
+                    var isDelta = deltas != null && deltas.Any();
+                    var asset = isDelta ? deltas!.First() : updateInfo.TargetFullRelease;
+                    
+                    CurrentDownloadFile = isDelta ? "Delta Packages" : (asset?.FileName ?? "Velopack Package");
+
+                    long totalBytes = 0;
+                    if (isDelta)
+                    {
+                        totalBytes = deltas?.Sum(d => d.Size) ?? 0;
+                    }
+                    else
+                    {
+                        totalBytes = updateInfo.TargetFullRelease?.Size ?? 0;
+                    }
+
+                    var sw = Stopwatch.StartNew();
+                    long lastReportTime = sw.ElapsedMilliseconds;
+                    long lastReportedBytes = 0;
+
+                    await _updateManager.DownloadUpdatesAsync(updateInfo, percent =>
+                    {
+                        // Velopack reserves the final 30% for package reconstruction.
+                        var isProcessing = percent >= 70;
+                        var downloadProgress = Math.Min(percent / 70.0, 1.0);
+                        long currentTotal = totalBytes > 0 ? (long)(downloadProgress * totalBytes) : 0;
+                        long nowTime = sw.ElapsedMilliseconds;
+                        double seconds = (nowTime - lastReportTime) / 1000.0;
+                        if (seconds <= 0) seconds = 0.1;
+
+                        long speedBytes = seconds > 0 ? (long)((currentTotal - lastReportedBytes) / seconds) : 0;
+                        lastReportedBytes = currentTotal;
+                        lastReportTime = nowTime;
+
+                        progress?.Report(new DownloadReport
+                        {
+                            Progress = downloadProgress,
+                            Percentage = isProcessing ? "" : $"{downloadProgress:P0}",
+                            Status = isProcessing ? "Processing package..." : "Downloading update...",
+                            IsIndeterminate = isProcessing,
+                            BytesReceived = FormatBytes(currentTotal),
+                            TotalBytes = totalBytes > 0 ? FormatBytes(totalBytes) : "Unknown",
+                            Speed = isProcessing ? "Verifying and preparing files" : FormatBytes(speedBytes) + "/s"
+                        });
+                    }, _downloadCts.Token);
+
+                    PendingInstallerPath = PendingVelopackUpdateMarker;
+                    return PendingInstallerPath;
+                }
+                catch (OperationCanceledException)
+                {
+                    return _isDownloadPaused ? "PAUSED" : null;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("Velopack download failed: " + ex.Message);
+                    return null;
+                }
+            }
+
+            return await DownloadExeInstallerAsync(url, progress);
+        }
+
+        private const int _downloadChunksCount = 4;
+        private bool _isDownloadPaused = false;
+        private CancellationTokenSource? _downloadCts = null;
+        public string CurrentDownloadFile { get; private set; } = string.Empty;
+
+        /// <summary>Why the last download failed, or empty. "Download failed" alone is useless
+        /// to whoever has to work out whether it was the network, the disk or a timeout.</summary>
+        public string LastDownloadError { get; private set; } = string.Empty;
+
+        public bool IsDownloadPaused => _isDownloadPaused;
+
+        public void PauseDownload()
+        {
+            _isDownloadPaused = true;
+            _downloadCts?.Cancel();
+        }
+
+        public void ResumeDownload()
+        {
+            _isDownloadPaused = false;
+        }
+
+        public void CancelDownload()
+        {
+            _isDownloadPaused = false;
+            _downloadCts?.Cancel();
+            CleanupPartFiles();
+        }
+
+        public void CleanupPartFiles()
+        {
+            var target = Path.Combine(Path.GetTempPath(), InstallerAssetName);
+            for (int i = 0; i < _downloadChunksCount; i++)
+            {
+                string partPath = $"{target}.part{i}";
+                if (File.Exists(partPath))
+                {
+                    try { File.Delete(partPath); } catch { }
+                }
+            }
+            if (File.Exists(target))
+            {
+                try { File.Delete(target); } catch { }
+            }
+        }
+
+        private async Task<string?> DownloadExeInstallerAsync(string url, IProgress<DownloadReport>? progress = null)
+        {
+            var target = Path.Combine(Path.GetTempPath(), InstallerAssetName);
+            CurrentDownloadFile = InstallerAssetName;
+            _downloadCts = new CancellationTokenSource();
+            var token = _downloadCts.Token;
+
+            try
+            {
+                using var http = new HttpClient(new TrafficTrackingHttpMessageHandler("Updates"))
+                {
+                    // No wall-clock limit. The default is 100 seconds and it covers the whole
+                    // transfer, not just the connect — so a 500 MB installer split into four
+                    // chunks needed roughly 40 Mbit/s sustained just to avoid being cancelled
+                    // mid-download. Anyone slower could never finish, however long they waited.
+                    // Cancelling and pausing run through _downloadCts and are unaffected.
+                    Timeout = System.Threading.Timeout.InfiniteTimeSpan
+                };
+                http.DefaultRequestHeaders.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue("RustPlusDesk", VersionForCompare.ToString()));
+
+                long totalBytes;
+                using (var headResp = await http.SendAsync(new HttpRequestMessage(HttpMethod.Head, url), token))
+                {
+                    headResp.EnsureSuccessStatusCode();
+                    totalBytes = headResp.Content.Headers.ContentLength ?? throw new Exception("Failed to get content length.");
+                }
+
+                int chunksCount = _downloadChunksCount;
+                long chunkLength = totalBytes / chunksCount;
+
+                var tasks = new Task[chunksCount];
+                long[] downloadedBytes = new long[chunksCount];
+
+                for (int i = 0; i < chunksCount; i++)
+                {
+                    string partPath = $"{target}.part{i}";
+                    if (File.Exists(partPath))
+                    {
+                        downloadedBytes[i] = new FileInfo(partPath).Length;
+                    }
+                }
+
+                var sw = Stopwatch.StartNew();
+                long lastReportedBytes = downloadedBytes.Sum();
+                var lastReportTime = sw.ElapsedMilliseconds;
+
+                var progressTask = Task.Run(async () =>
+                {
+                    while (!token.IsCancellationRequested)
+                    {
+                        await Task.Delay(250, token);
+                        long currentTotal = downloadedBytes.Sum();
+                        long nowTime = sw.ElapsedMilliseconds;
+                        double seconds = (nowTime - lastReportTime) / 1000.0;
+                        if (seconds <= 0) seconds = 0.25;
+
+                        long speedBytes = (long)((currentTotal - lastReportedBytes) / seconds);
+                        lastReportedBytes = currentTotal;
+                        lastReportTime = nowTime;
+
+                        progress?.Report(new DownloadReport
+                        {
+                            Progress = (double)currentTotal / totalBytes,
+                            Percentage = $"{((double)currentTotal / totalBytes):P0}",
+                            Status = "Downloading update...",
+                            BytesReceived = FormatBytes(currentTotal),
+                            TotalBytes = FormatBytes(totalBytes),
+                            Speed = FormatBytes(speedBytes) + "/s"
+                        });
+
+                        if (currentTotal >= totalBytes) break;
+                    }
+                }, token);
+
+                for (int i = 0; i < chunksCount; i++)
+                {
+                    int chunkIndex = i;
+                    long start = chunkIndex * chunkLength;
+                    long end = (chunkIndex == chunksCount - 1) ? totalBytes - 1 : (chunkIndex + 1) * chunkLength - 1;
+
+                    tasks[chunkIndex] = DownloadChunkAsync(url, target, chunkIndex, start, end, downloadedBytes, token);
+                }
+
+                await Task.WhenAll(tasks);
+                try { await progressTask; } catch { }
+
+                progress?.Report(new DownloadReport
+                {
+                    Progress = 1,
+                    Percentage = "",
+                    Status = "Preparing installer...",
+                    IsIndeterminate = true,
+                    BytesReceived = FormatBytes(totalBytes),
+                    TotalBytes = FormatBytes(totalBytes),
+                    Speed = "Combining downloaded files"
+                });
+
+                using (var outputStream = File.Create(target))
+                {
+                    for (int i = 0; i < chunksCount; i++)
+                    {
+                        string partPath = $"{target}.part{i}";
+                        using (var partStream = File.OpenRead(partPath))
+                        {
+                            await partStream.CopyToAsync(outputStream);
+                        }
+                        File.Delete(partPath);
+                    }
+                }
+
+                PendingInstallerPath = target;
+                return target;
+            }
+            // Only when *we* cancelled. HttpClient reports its own timeout as a
+            // TaskCanceledException as well, and without this filter it was swallowed here as
+            // though the user had pressed cancel — which is why a failed download said nothing
+            // at all, in the log or anywhere else.
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                return _isDownloadPaused ? "PAUSED" : null;
+            }
+            catch (Exception ex)
+            {
+                LastDownloadError = ex.Message;
+                Debug.WriteLine($"Multi-part download failed: {ex}");
+                return null;
+            }
+        }
+
+        private async Task DownloadChunkAsync(string url, string target, int chunkIndex, long start, long end, long[] downloadedBytes, CancellationToken token)
+        {
+            string partPath = $"{target}.part{chunkIndex}";
+            long currentStart = start + downloadedBytes[chunkIndex];
+
+            if (currentStart >= end)
+            {
+                return;
+            }
+
+            // Same reasoning as above: this is the client that actually moves the bytes.
+            using var http = new HttpClient(new TrafficTrackingHttpMessageHandler("Updates")) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+            http.DefaultRequestHeaders.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue("RustPlusDesk", VersionForCompare.ToString()));
+
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(currentStart, end);
+
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+            response.EnsureSuccessStatusCode();
+
+            using var responseStream = await response.Content.ReadAsStreamAsync(token);
+            using var fileStream = new FileStream(partPath, FileMode.Append, FileAccess.Write, FileShare.None, 4096, true);
+
+            var buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = await responseStream.ReadAsync(buffer, 0, buffer.Length, token)) > 0)
+            {
+                await fileStream.WriteAsync(buffer, 0, bytesRead, token);
+                downloadedBytes[chunkIndex] += bytesRead;
+            }
+        }
+
+        public void StartInstaller(string installerPath, bool restart = true)
+        {
+            InitializeIfNeeded();
+            if (string.Equals(installerPath, PendingVelopackUpdateMarker, StringComparison.OrdinalIgnoreCase))
+            {
+                var pending = _updateManager?.UpdatePendingRestart ?? _pendingUpdateInfo?.TargetFullRelease;
+                if (pending != null && _updateManager != null)
+                {
+                    _updateManager.WaitExitThenApplyUpdates(pending, silent: true, restart: restart);
+                    return;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(installerPath) && File.Exists(installerPath))
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = installerPath,
+                    UseShellExecute = true,
+                    Verb = "runas"
+                };
+                Process.Start(psi);
+            }
+        }
+
+        private static string NormalizeVer(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return "0.0.0";
+            s = s.Trim();
+            if (s.StartsWith("v", StringComparison.OrdinalIgnoreCase)) s = s[1..];
+            int dash = s.IndexOfAny(new[] { '-', '+' });
+            if (dash > 0) s = s[..dash];
+            return s;
+        }
+
+        public static string FormatBytes(long bytes)
+        {
+            string[] Suffix = { "B", "KB", "MB", "GB", "TB" };
+            int i;
+            double dblSByte = bytes;
+            for (i = 0; i < Suffix.Length && bytes >= 1024; i++, bytes /= 1024)
+            {
+                dblSByte = bytes / 1024.0;
+            }
+            return $"{dblSByte:0.##} {Suffix[i]}";
+        }
+    }
+}
+

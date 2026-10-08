@@ -1,0 +1,110 @@
+<ui:FluentWindow x:Class="RustPlusDesk.Views.Windows.StorageMonitorAutomationDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Storage Monitor Otomasyonu" Width="520" SizeToContent="Height"
+        MinHeight="460"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ExtendsContentIntoTitleBar="True"
+        WindowCornerPreference="Round"
+        WindowBackdropType="Mica"
+        Background="{DynamicResource ApplicationBackgroundBrush}"
+        Foreground="{DynamicResource TextPrimary}">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Height="40" Title="Storage Monitor Otomasyonu"
+                     ShowMinimize="False" ShowMaximize="False"
+                     Background="Transparent" Foreground="{DynamicResource TextPrimary}">
+            <ui:TitleBar.Icon>
+                <ui:SymbolIcon Symbol="BoxMultiple24" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
+        <StackPanel Grid.Row="1" Margin="24,8,24,20">
+            <TextBlock x:Name="TxtHeading" Text="📦 Sandık / Storage Otomasyonu" FontSize="18" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimary}"/>
+            <TextBlock x:Name="TxtSubheading" Margin="0,4,0,0" TextWrapping="Wrap" Foreground="{DynamicResource TextSubtle}" FontSize="12.5"
+                       Text="Bu sandığa veya dolaba eşya girdiğinde ya da eksildiğinde otomatik aksiyon tetikleyin."/>
+
+            <!-- Device Name Banner -->
+            <Border Margin="0,14,0,0" Padding="12,8" Background="#1A2D3540" BorderBrush="#30FFFFFF" BorderThickness="1" CornerRadius="8">
+                <DockPanel LastChildFill="True">
+                    <TextBlock Text="Cihaz:" FontWeight="Bold" Foreground="{DynamicResource Accent}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="TxtDeviceName" Text="Storage Monitor" Foreground="White" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+            </Border>
+
+            <!-- Item Selection -->
+            <TextBlock Margin="0,14,0,4" Text="Takip Edilecek Eşya (Item):" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+            <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ComboBox x:Name="CmbItemPreset" Margin="0,0,8,0" SelectionChanged="CmbItemPreset_SelectionChanged">
+                    <ComboBoxItem Content="Herhangi bir eşya (*)" Tag="*" IsSelected="True"/>
+                    <ComboBoxItem Content="Kükürt / Sulfur (sulfur)" Tag="sulfur"/>
+                    <ComboBoxItem Content="Kükürt Cevheri (sulfur.ore)" Tag="sulfur.ore"/>
+                    <ComboBoxItem Content="Hurda / Scrap (scrap)" Tag="scrap"/>
+                    <ComboBoxItem Content="Roket / Rocket (ammo.rocket.basic)" Tag="ammo.rocket.basic"/>
+                    <ComboBoxItem Content="HV Roket (ammo.rocket.hv)" Tag="ammo.rocket.hv"/>
+                    <ComboBoxItem Content="Patlayıcı / C4 (explosive.timed)" Tag="explosive.timed"/>
+                    <ComboBoxItem Content="HQM / Kaliteli Metal (metal.refined)" Tag="metal.refined"/>
+                    <ComboBoxItem Content="Demir / Metal Parçası (metal.fragments)" Tag="metal.fragments"/>
+                    <ComboBoxItem Content="Odun / Wood (wood)" Tag="wood"/>
+                    <ComboBoxItem Content="Taş / Stone (stones)" Tag="stones"/>
+                    <ComboBoxItem Content="Barut / Gunpowder (gunpowder)" Tag="gunpowder"/>
+                    <ComboBoxItem Content="Özel Eşya Adı Girin..." Tag="CUSTOM"/>
+                </ComboBox>
+                <ui:Button Grid.Column="1" Click="BtnSearchAllItems_Click" ToolTip="Oyundaki Tüm Eşyalardan Arayıp Seç" Padding="8,4" Appearance="Secondary">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Search24" Margin="0,0,4,0"/>
+                        <TextBlock Text="Tüm Eşyalar"/>
+                    </StackPanel>
+                </ui:Button>
+            </Grid>
+            <ui:TextBox x:Name="TxtCustomItem" PlaceholderText="Örn: sulfur, scrap, rifle.ak" Visibility="Collapsed" Margin="0,0,0,6"/>
+
+            <!-- Condition -->
+            <TextBlock Margin="0,8,0,4" Text="Tetiklenme Durumu:" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+            <ComboBox x:Name="CmbCondition" Margin="0,0,0,6">
+                <ComboBoxItem Content="Eşya Değiştiğinde (+/- Herhangi Bir Değişiklik)" Tag="ItemChanged" IsSelected="True"/>
+                <ComboBoxItem Content="Eşya Eklendiğinde / Arttığında (+)" Tag="ItemAdded"/>
+                <ComboBoxItem Content="Eşya Alındığında / Eksildiğinde (-)" Tag="ItemRemoved"/>
+                <ComboBoxItem Content="Miktar Sayıya Eşit veya Üzerine Çıkınca (>=)" Tag="CountAbove"/>
+                <ComboBoxItem Content="Miktar Belirtilen Sayının Altına Düşünce (&lt;=)" Tag="CountBelow"/>
+                <ComboBoxItem Content="Sandık Tamamen Boşaldığında (Empty)" Tag="Empty"/>
+            </ComboBox>
+
+            <!-- Threshold Count -->
+            <TextBlock Margin="0,8,0,4" Text="Miktar Eşiği (Adet):" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+            <ui:TextBox x:Name="TxtThreshold" Text="1" Margin="0,0,0,6"/>
+
+            <!-- Target Smart Switch -->
+            <TextBlock Margin="0,8,0,4" Text="Tetiklenecek Şalter (Smart Switch):" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+            <ComboBox x:Name="CmbTargetSwitch" Margin="0,0,0,6" DisplayMemberPath="DisplayName"/>
+
+            <!-- Switch Action -->
+            <TextBlock Margin="0,8,0,4" Text="Şalter Aksiyonu:" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+            <ComboBox x:Name="CmbSwitchAction" Margin="0,0,0,10">
+                <ComboBoxItem Content="Şalteri AÇ (Turn ON)" Tag="ON" IsSelected="True"/>
+                <ComboBoxItem Content="Şalteri KAPAT (Turn OFF)" Tag="OFF"/>
+                <ComboBoxItem Content="Şalter Durumunu Tersine Çevir (Toggle)" Tag="TOGGLE"/>
+            </ComboBox>
+
+            <ui:InfoBar x:Name="Err" Margin="0,0,0,8" Severity="Error" IsClosable="False" IsOpen="False"/>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                <ui:Button Content="İptal" Appearance="Secondary" MinWidth="92" Margin="0,0,10,0" Click="Cancel_Click"/>
+                <ui:Button x:Name="BtnSave" Content="Kaydet ve Aktifleştir" Appearance="Primary" MinWidth="160"
+                           Icon="{ui:SymbolIcon Symbol=Checkmark24}" Click="Save_Click" IsDefault="True"/>
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

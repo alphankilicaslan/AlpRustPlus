@@ -1,0 +1,734 @@
+<UserControl x:Class="RustPlusDesk.Views.LogicEngineOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:conv="clr-namespace:RustPlusDesk.Converters"
+             xmlns:services="clr-namespace:RustPlusDesk.Services"
+             xmlns:tutorials="clr-namespace:RustPlusDesk.Features.Tutorials"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             xmlns:views="clr-namespace:RustPlusDesk.Views"
+             mc:Ignorable="d" 
+             Background="{DynamicResource Surface}"
+             Foreground="{DynamicResource TextPrimary}"
+             d:DesignHeight="800" d:DesignWidth="600">
+
+    <UserControl.Resources>
+        <conv:DeviceFilterConverter x:Key="DeviceFilterConverter" />
+        <conv:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <conv:BoolToVisibilityConverter x:Key="InvertedBoolToVisibilityConverter" Invert="True" />
+        <conv:EmptyCollectionToVisibilityConverter x:Key="EmptyCollectionToVisibilityConverter" />
+        <conv:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+        <conv:NullToVisibilityConverter x:Key="NullToInvertedVisibilityConverter" Invert="True" />
+    </UserControl.Resources>
+
+    <Grid ClipToBounds="True">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="36" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header Bar -->
+        <Border Grid.Row="0" Background="{DynamicResource SurfaceAlt}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="0,0,0,1" Padding="12,0">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:SymbolIcon Symbol="DeveloperBoard24" Margin="0,0,8,0" Foreground="{DynamicResource Accent}" VerticalAlignment="Center" FontSize="14"/>
+                    <TextBlock Text="{DynamicResource UiLogicEngine}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                </StackPanel>
+                <Button x:Name="BtnCloseLogicEngine" Content="&#x2715;" Style="{StaticResource GhostButton}" Width="26" Height="26" Padding="0" FontSize="12" Foreground="{DynamicResource TextSubtle}" HorizontalAlignment="Right" VerticalAlignment="Center" Click="BtnCloseLogicEngine_Click" />
+            </Grid>
+        </Border>
+
+        <!-- Main Panel -->
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Actions top card -->
+            <Border Style="{StaticResource Card}" Margin="12,12,12,0" Grid.Row="0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:ToggleSwitch x:Name="ToggleEngineActive" tutorials:Tutorial.TargetId="Automation.Enabled" Content="{DynamicResource UiEngineActivePlayStop}"
+                                          IsChecked="{Binding Selected.IsLogicEngineActive, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                          Checked="ToggleEngineActive_StateChanged" Unchecked="ToggleEngineActive_StateChanged"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:Button x:Name="BtnAddOilRigRule" tutorials:Tutorial.TargetId="Automation.CreateOilRigRule" Click="BtnAddOilRigRule_Click" Appearance="Secondary" Margin="0,0,8,0" ToolTip="Add Oil Rig Trigger Template" Padding="5,3">
+                            <Image Source="pack://application:,,,/Assets/icons/oilrig.png" Width="26" Height="26" RenderOptions.BitmapScalingMode="HighQuality"/>
+                        </ui:Button>
+                        <ui:Button x:Name="BtnAddRule" tutorials:Tutorial.TargetId="Automation.CreateRule" Click="BtnAddRule_Click" Appearance="Primary" Content="{DynamicResource UiAddRule}" Icon="{ui:SymbolIcon Symbol=Add24}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Runtime Status Panel -->
+            <Border Style="{StaticResource Card}" Margin="12,0,12,12" Grid.Row="1" Background="{DynamicResource SurfaceAlt}" BorderBrush="{DynamicResource Accent}" BorderThickness="1,0,0,0">
+                <Grid DataContext="{Binding Source={x:Static services:LogicEngineRuntimeService.Instance}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,8">
+                        <ui:SymbolIcon Symbol="Pulse24" Margin="0,0,8,0" Foreground="{DynamicResource Accent}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{DynamicResource UiLogicEngineRuntime}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}"/>
+                        <Border Margin="8,0,0,0" Padding="6,2" CornerRadius="4" Background="{DynamicResource Accent}" Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <TextBlock Text="{DynamicResource UiRUNNING}" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                        </Border>
+                        <Border Margin="8,0,0,0" Padding="6,2" CornerRadius="4" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1" Visibility="{Binding IsRunning, Converter={StaticResource InvertedBoolToVisibilityConverter}}">
+                            <TextBlock Text="{DynamicResource UiIDLE}" FontSize="10" Foreground="{DynamicResource TextSubtle}"/>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="1" Margin="0,0,0,8">
+                        <TextBlock FontSize="12" Foreground="{DynamicResource TextPrimary}" Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <Run Text="{DynamicResource UiActiveRule}"/>
+                            <Run Text="{Binding CurrentRuleName}" FontWeight="SemiBold"/>
+                        </TextBlock>
+                        <TextBlock FontSize="11" Foreground="{DynamicResource TextSubtle}" Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <Run Text="{DynamicResource UiCurrentStep}"/>
+                            <Run Text="{Binding CurrentStepNumber}" FontWeight="SemiBold"/>
+                            <Run Text=" - "/>
+                            <Run Text="{Binding CurrentStepType}"/>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="{DynamicResource UiPendingQueue}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSubtle}" Margin="0,0,0,4"/>
+                            <ItemsControl ItemsSource="{Binding PendingRules}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" FontSize="11" Foreground="{DynamicResource TextPrimary}" Margin="12,0,0,2"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="{DynamicResource UiNoPendingRules}" FontSize="11" Foreground="{DynamicResource TextSubtle}" FontStyle="Italic" Visibility="{Binding PendingRules, Converter={StaticResource EmptyCollectionToVisibilityConverter}}"/>
+                        </StackPanel>
+                        <ui:Button Grid.Column="1" Content="{DynamicResource Stop}" Appearance="Danger" Icon="{ui:SymbolIcon Symbol=Stop24}" Click="BtnStopLogicEngine_Click" IsEnabled="{Binding IsRunning}" VerticalAlignment="Bottom"/>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- Rules List -->
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="12">
+                <ItemsControl x:Name="RulesItemsControl" tutorials:Tutorial.TargetId="Automation.Rules" ItemsSource="{Binding Selected.LogicRules}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border BorderThickness="1" BorderBrush="{DynamicResource CardBorder}" Background="{DynamicResource SurfaceAlt}" CornerRadius="8" Margin="0,0,0,12" Padding="12">
+                                <StackPanel>
+                                    <!-- Rule Header: Icon, Enable, Name, Expand, Delete -->
+                                    <Grid VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Icon picker -->
+                                        <ui:Button Grid.Column="0" Click="BtnChangeRuleIcon_Click" Tag="{Binding}" Width="32" Height="32" Padding="4" Margin="0,0,8,0" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1" CornerRadius="6" ToolTip="{DynamicResource ChangeRuleIconTitle}">
+                                            <Grid>
+                                                <Image Source="{Binding CustomIcon}" Width="24" Height="24" RenderOptions.BitmapScalingMode="HighQuality" Visibility="{Binding CustomIcon, Converter={StaticResource NullToInvertedVisibilityConverter}}"/>
+                                                <ui:SymbolIcon Symbol="Emoji24" Visibility="{Binding CustomIcon, Converter={StaticResource NullToVisibilityConverter}}"/>
+                                            </Grid>
+                                        </ui:Button>
+
+                                        <!-- Enabled checkbox -->
+                                        <CheckBox Grid.Column="1" IsChecked="{Binding IsEnabled, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="{DynamicResource UiEnableRule}" Margin="0,0,8,0"/>
+
+                                        <!-- Rule name -->
+                                        <ui:TextBox Grid.Column="2" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" FontWeight="SemiBold" VerticalAlignment="Center" PlaceholderText="{DynamicResource UiRuleName}"/>
+
+                                        <!-- Expand/collapse -->
+                                        <ui:Button Grid.Column="3" Click="BtnToggleRuleExpand_Click" Tag="{Binding}" Appearance="Transparent" Width="30" Height="30" Padding="0" ToolTip="{DynamicResource UiExpandCollapse}" Foreground="{DynamicResource TextSubtle}">
+                                            <Grid>
+                                                <ui:SymbolIcon Symbol="ChevronRight24" Visibility="{Binding IsExpanded, Converter={StaticResource InvertedBoolToVisibilityConverter}}"/>
+                                                <ui:SymbolIcon Symbol="ChevronDown24" Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                            </Grid>
+                                        </ui:Button>
+
+                                        <!-- Delete Rule -->
+                                        <Grid Grid.Column="4">
+                                            <ui:Button Click="BtnDeleteRule_Click" Tag="{Binding}" Appearance="Transparent" Width="30" Height="30" Padding="0" ToolTip="{DynamicResource UiDeleteRule}" Foreground="IndianRed" Visibility="{Binding IsConfirmingDelete, Converter={StaticResource InvertedBoolToVisibilityConverter}}">
+                                                <ui:SymbolIcon Symbol="Delete20"/>
+                                            </ui:Button>
+                                            <StackPanel Orientation="Horizontal" Visibility="{Binding IsConfirmingDelete, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                <ui:Button Click="BtnConfirmDeleteRule_Click" Tag="{Binding}" Appearance="Danger" Width="30" Height="30" Padding="0" ToolTip="{DynamicResource UiConfirmDelete}" Margin="0,0,4,0">
+                                                    <ui:SymbolIcon Symbol="Checkmark20"/>
+                                                </ui:Button>
+                                                <ui:Button Click="BtnCancelDeleteRule_Click" Tag="{Binding}" Appearance="Secondary" Width="30" Height="30" Padding="0" ToolTip="{DynamicResource Cancel}">
+                                                    <ui:SymbolIcon Symbol="Dismiss20"/>
+                                                </ui:Button>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Grid>
+
+                                    <!-- Rule Details -->
+                                    <Grid Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <StackPanel>
+                                            <Separator Background="{DynamicResource CardBorder}" Margin="0,8,0,8"/>
+
+                                            <!-- Rule Trigger Config -->
+                                    <TextBlock Text="{DynamicResource UiTriggerEvent}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource Accent}" Margin="0,0,0,4"/>
+                                    <WrapPanel Margin="0,0,0,8" VerticalAlignment="Center">
+                                        <!-- Trigger Type -->
+                                        <ComboBox SelectedValue="{Binding TriggerType, Mode=TwoWay}" SelectedValuePath="Tag" Width="130" Margin="0,0,8,4">
+                                            <ComboBoxItem Content="{DynamicResource SmartAlarm}" Tag="SmartAlarm"/>
+                                            <ComboBoxItem Content="{DynamicResource UiSmartSwitch}" Tag="SmartSwitch"/>
+                                            <ComboBoxItem Content="{DynamicResource TimerCreateCmdLabel}" Tag="ChatCommand"/>
+                                            <ComboBoxItem Content="{DynamicResource UiRuleTriggered}" Tag="RuleTriggered"/>
+                                            <ComboBoxItem Content="{DynamicResource UiRuleCompleted}" Tag="RuleCompleted"/>
+                                            <!--  Fired by a tile on the mini-map's command dock. It carries no
+                                                  trigger detail of its own: the tile names the rule, not the
+                                                  other way round.  -->
+                                            <ComboBoxItem Content="{DynamicResource UiCommandDockTrigger}" Tag="CommandDock"/>
+                                            <ComboBoxItem Content="📦 Sandık / Storage" Tag="StorageMonitor"/>
+                                         </ComboBox>
+
+                                         <!-- Trigger Details -->
+                                         <!-- If Alarm -->
+                                         <ComboBox x:Name="CmbTriggerDeviceAlarm" Width="200" Margin="0,0,8,4"
+                                                   ItemsSource="{Binding DataContext.Selected.FlatDevices, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource DeviceFilterConverter}, ConverterParameter=SmartAlarm}"
+                                                   SelectedValue="{Binding TriggerEntityId, Mode=TwoWay}"
+                                                   SelectionChanged="CmbTriggerDeviceAlarm_SelectionChanged"
+                                                   SelectedValuePath="EntityId" DisplayMemberPath="DisplayName">
+                                             <ComboBox.Style>
+                                                 <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                                     <Setter Property="Visibility" Value="Collapsed" />
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding TriggerType}" Value="SmartAlarm">
+                                                             <Setter Property="Visibility" Value="Visible" />
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </ComboBox.Style>
+                                         </ComboBox>
+
+                                         <!-- If Switch -->
+                                         <ComboBox x:Name="CmbTriggerDeviceSwitch" Width="200" Margin="0,0,8,4"
+                                                   ItemsSource="{Binding DataContext.Selected.FlatDevices, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource DeviceFilterConverter}, ConverterParameter=SmartSwitch}"
+                                                   SelectedValue="{Binding TriggerEntityId, Mode=TwoWay}"
+                                                   SelectedValuePath="EntityId" DisplayMemberPath="DisplayName">
+                                             <ComboBox.Style>
+                                                 <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                                     <Setter Property="Visibility" Value="Collapsed" />
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding TriggerType}" Value="SmartSwitch">
+                                                             <Setter Property="Visibility" Value="Visible" />
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </ComboBox.Style>
+                                         </ComboBox>
+                                         
+                                         <!-- If Storage Monitor -->
+                                         <ComboBox x:Name="CmbTriggerDeviceStorage" Width="200" Margin="0,0,8,4"
+                                                   ItemsSource="{Binding DataContext.Selected.FlatDevices, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource DeviceFilterConverter}, ConverterParameter=StorageMonitor}"
+                                                   SelectedValue="{Binding TriggerEntityId, Mode=TwoWay}"
+                                                   SelectedValuePath="EntityId" DisplayMemberPath="DisplayName">
+                                             <ComboBox.Style>
+                                                 <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                                     <Setter Property="Visibility" Value="Collapsed" />
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding TriggerType}" Value="StorageMonitor">
+                                                             <Setter Property="Visibility" Value="Visible" />
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </ComboBox.Style>
+                                         </ComboBox>
+
+                                         <!-- Storage Condition -->
+                                         <ComboBox SelectedValue="{Binding StorageCondition, Mode=TwoWay}" SelectedValuePath="Tag" Width="150" Margin="0,0,8,4" x:Name="CmbStorageCondition">
+                                             <ComboBox.Style>
+                                                 <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                                     <Setter Property="Visibility" Value="Collapsed" />
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding TriggerType}" Value="StorageMonitor">
+                                                             <Setter Property="Visibility" Value="Visible" />
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </ComboBox.Style>
+                                             <ComboBoxItem Content="Eşya Değiştiğinde (+/-)" Tag="ItemChanged"/>
+                                             <ComboBoxItem Content="Eşya Eklendiğinde (+)" Tag="ItemAdded"/>
+                                             <ComboBoxItem Content="Eşya Alındığında (-)" Tag="ItemRemoved"/>
+                                             <ComboBoxItem Content="Miktar >= (Üstü)" Tag="CountAbove"/>
+                                             <ComboBoxItem Content="Miktar &lt;= (Altı)" Tag="CountBelow"/>
+                                             <ComboBoxItem Content="Sandık Boşaldığında" Tag="Empty"/>
+                                         </ComboBox>
+
+                                         <!-- Storage Item (All items in Rust) -->
+                                         <ComboBox Width="180" Margin="0,0,4,4" x:Name="CmbStorageItem"
+                                                   IsEditable="True"
+                                                   ItemsSource="{Binding Source={x:Static views:MainWindow.AllRustItemOptionsList}}"
+                                                   SelectedValue="{Binding StorageItemShortName, Mode=TwoWay}"
+                                                   SelectedValuePath="ShortName"
+                                                   DisplayMemberPath="FullLabel"
+                                                   ToolTip="Takip edilecek eşya (tüm eşyalar)">
+                                             <ComboBox.Style>
+                                                 <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                                     <Setter Property="Visibility" Value="Collapsed" />
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding TriggerType}" Value="StorageMonitor">
+                                                             <Setter Property="Visibility" Value="Visible" />
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </ComboBox.Style>
+                                         </ComboBox>
+
+                                         <!-- Storage Item Search Dialog Button -->
+                                         <ui:Button Width="32" Height="32" Margin="0,0,8,4" Padding="0" Click="BtnPickStorageItem_Click" Tag="{Binding}" ToolTip="Oyundaki Tüm Eşyalardan Arayıp Seç">
+                                             <ui:Button.Style>
+                                                 <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding TriggerType}" Value="StorageMonitor">
+                                                             <Setter Property="Visibility" Value="Visible"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </ui:Button.Style>
+                                             <ui:SymbolIcon Symbol="Search24"/>
+                                         </ui:Button>
+
+                                         <!-- Storage Threshold -->
+                                         <StackPanel Orientation="Horizontal" Margin="0,0,8,4" VerticalAlignment="Center">
+                                             <StackPanel.Style>
+                                                 <Style TargetType="StackPanel">
+                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding TriggerType}" Value="StorageMonitor">
+                                                             <Setter Property="Visibility" Value="Visible"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </StackPanel.Style>
+                                             <TextBlock Text="Eşik:" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{DynamicResource TextSubtle}" FontSize="11"/>
+                                             <ui:TextBox Text="{Binding StorageThreshold, Mode=TwoWay}" Width="50" PlaceholderText="1"/>
+                                         </StackPanel>
+
+                                         <!-- If Chat Command -->
+                                         <ui:TextBox Text="{Binding TriggerCommand, Mode=TwoWay}" Width="150" Margin="0,0,8,4" PlaceholderText="{DynamicResource UiEGNAME2}" x:Name="TxtTriggerCmd">
+                                             <ui:TextBox.Style>
+                                                 <Style TargetType="ui:TextBox" BasedOn="{StaticResource {x:Type ui:TextBox}}">
+                                                     <Setter Property="Visibility" Value="Collapsed" />
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding TriggerType}" Value="ChatCommand">
+                                                             <Setter Property="Visibility" Value="Visible" />
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </ui:TextBox.Style>
+                                         </ui:TextBox>
+
+                                         <ComboBox Width="200" Margin="0,0,8,4"
+                                                   ItemsSource="{Binding DataContext.Selected.LogicRules, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                   SelectedValue="{Binding TriggerRuleId, Mode=TwoWay}"
+                                                   SelectedValuePath="Id" DisplayMemberPath="Name"
+                                                   ToolTip="{DynamicResource UiSelectTheSourceRuleForThisTrigger}">
+                                             <ComboBox.Style>
+                                                 <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                                     <Setter Property="Visibility" Value="Collapsed" />
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding TriggerType}" Value="RuleTriggered">
+                                                             <Setter Property="Visibility" Value="Visible" />
+                                                         </DataTrigger>
+                                                         <DataTrigger Binding="{Binding TriggerType}" Value="RuleCompleted">
+                                                             <Setter Property="Visibility" Value="Visible" />
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </ComboBox.Style>
+                                         </ComboBox>
+ 
+                                         <!-- State / Value for Switch -->
+                                         <ComboBox SelectedValue="{Binding TriggerState, Mode=TwoWay}" SelectedValuePath="Tag" Width="110" Margin="0,0,8,4" x:Name="CmbTriggerStateSwitch">
+                                             <ComboBox.Style>
+                                                 <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                                     <Setter Property="Visibility" Value="Collapsed" />
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding TriggerType}" Value="SmartSwitch">
+                                                             <Setter Property="Visibility" Value="Visible" />
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </ComboBox.Style>
+                                             <ComboBoxItem Content="{DynamicResource UiActiveON}">
+                                                 <ComboBoxItem.Tag>
+                                                     <sys:Boolean>True</sys:Boolean>
+                                                 </ComboBoxItem.Tag>
+                                             </ComboBoxItem>
+                                             <ComboBoxItem Content="{DynamicResource UiInactiveOFF}">
+                                                 <ComboBoxItem.Tag>
+                                                     <sys:Boolean>False</sys:Boolean>
+                                                 </ComboBoxItem.Tag>
+                                             </ComboBoxItem>
+                                         </ComboBox>
+
+                                         <!-- State / Value for Alarm -->
+                                         <ComboBox SelectedValue="{Binding TriggerState, Mode=TwoWay}" SelectedValuePath="Tag" Width="110" Margin="0,0,8,4" x:Name="CmbTriggerStateAlarm">
+                                             <ComboBox.Style>
+                                                 <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                                     <Setter Property="Visibility" Value="Collapsed" />
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding TriggerType}" Value="SmartAlarm">
+                                                             <Setter Property="Visibility" Value="Visible" />
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </ComboBox.Style>
+                                             <ComboBoxItem Content="{DynamicResource UiTriggered}">
+                                                 <ComboBoxItem.Tag>
+                                                     <sys:Boolean>True</sys:Boolean>
+                                                 </ComboBoxItem.Tag>
+                                             </ComboBoxItem>
+                                         </ComboBox>
+                                     </WrapPanel>
+
+                                     <WrapPanel Margin="0,0,0,8" VerticalAlignment="Center">
+                                         <CheckBox Content="{DynamicResource UiLoopAfterCompletion}"
+                                                   IsChecked="{Binding IsLoopEnabled, Mode=TwoWay}"
+                                                   Margin="0,0,10,0"
+                                                   VerticalAlignment="Center"
+                                                   ToolTip="{DynamicResource UiRunThisRuleAgainAfterItCompletesAPositiveWaitStepIsRequired}"/>
+                                         <StackPanel Orientation="Horizontal">
+                                             <StackPanel.Style>
+                                                 <Style TargetType="StackPanel">
+                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding IsLoopEnabled}" Value="True">
+                                                             <Setter Property="Visibility" Value="Visible"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </StackPanel.Style>
+                                             <ui:TextBox Text="{Binding LoopCount, Mode=TwoWay}" Width="60" PlaceholderText="{DynamicResource UiCount}"/>
+                                             <TextBlock Text="{DynamicResource UiRepeats0Indefinitely}" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSubtle}"/>
+                                         </StackPanel>
+                                     </WrapPanel>
+ 
+                                     <!-- Gating Condition -->
+                                     <TextBlock Text="{DynamicResource UiGatingConditionOptional}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSubtle}" Margin="0,4,0,4"/>
+                                     <WrapPanel Margin="0,0,0,8" VerticalAlignment="Center">
+                                         <ComboBox SelectedValue="{Binding ConditionOperator, Mode=TwoWay}" SelectedValuePath="Tag" Width="90" Margin="0,0,8,4">
+                                             <ComboBoxItem Content="{DynamicResource AlertDeepSeaUpVars}" Tag="NONE"/>
+                                             <ComboBoxItem Content="{DynamicResource UiAND}" Tag="AND"/>
+                                             <ComboBoxItem Content="{DynamicResource UiOR}" Tag="OR"/>
+                                         </ComboBox>
+ 
+                                         <ComboBox x:Name="CmbConditionDevice" Width="200" Margin="0,0,8,4"
+                                                   ItemsSource="{Binding DataContext.Selected.FlatDevices, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource DeviceFilterConverter}, ConverterParameter=SmartSwitch}"
+                                                   SelectedValue="{Binding ConditionDeviceEntityId, Mode=TwoWay}"
+                                                   SelectedValuePath="EntityId" DisplayMemberPath="DisplayName">
+                                             <ComboBox.Style>
+                                                 <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                                     <Setter Property="Visibility" Value="Collapsed" />
+                                                     <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ConditionOperator}" Value="AND">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding ConditionOperator}" Value="OR">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ComboBox.Style>
+                                        </ComboBox>
+
+                                        <ComboBox SelectedValue="{Binding ConditionDeviceState, Mode=TwoWay}" SelectedValuePath="Tag" Width="100" Margin="0,0,8,4" x:Name="CmbConditionState">
+                                            <ComboBox.Style>
+                                                <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ConditionOperator}" Value="AND">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding ConditionOperator}" Value="OR">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ComboBox.Style>
+                                            <ComboBoxItem Content="{DynamicResource StateOn}">
+                                                <ComboBoxItem.Tag>
+                                                    <sys:Boolean>True</sys:Boolean>
+                                                </ComboBoxItem.Tag>
+                                            </ComboBoxItem>
+                                            <ComboBoxItem Content="{DynamicResource StateOff}">
+                                                <ComboBoxItem.Tag>
+                                                    <sys:Boolean>False</sys:Boolean>
+                                                </ComboBoxItem.Tag>
+                                            </ComboBoxItem>
+                                        </ComboBox>
+                                    </WrapPanel>
+
+                                    <!-- Rule Steps -->
+                                    <TextBlock Text="{DynamicResource UiExecutionSteps}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource Accent}" Margin="0,8,0,4"/>
+                                    <ItemsControl ItemsSource="{Binding Steps}" x:Name="StepsItemsControl">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="#12161f" CornerRadius="4" Padding="8" Margin="0,0,0,6" BorderBrush="#1C202A" BorderThickness="1">
+                                                    <StackPanel>
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+
+                                                            <WrapPanel VerticalAlignment="Center">
+                                                                <ComboBox SelectedValue="{Binding StepType, Mode=TwoWay}" SelectedValuePath="Tag" Width="130" Margin="0,0,8,4">
+                                                                    <ComboBoxItem Content="{DynamicResource UiWait}" Tag="Wait"/>
+                                                                    <ComboBoxItem Content="{DynamicResource UiToggleDevice}" Tag="Toggle"/>
+                                                                    <ComboBoxItem Content="{DynamicResource UiCheckAvailability}" Tag="CheckAvailability"/>
+                                                                    <ComboBoxItem Content="{DynamicResource UiStartTimer}" Tag="StartTimer"/>
+                                                                </ComboBox>
+
+                                                                <!-- Start Timer Config. Two rows, because the alarm text needs room:
+                                                                     its label runs long in most languages and was cut off beside
+                                                                     the other controls. -->
+                                                                <StackPanel Orientation="Vertical" Margin="0,0,8,4" x:Name="PanelStartTimer">
+                                                                    <StackPanel.Style>
+                                                                        <Style TargetType="StackPanel">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding StepType}" Value="StartTimer">
+                                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </StackPanel.Style>
+
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                    <ui:TextBox Text="{Binding TimerMinutes, Mode=TwoWay}" Width="50"/>
+                                                                    <TextBlock Text="{DynamicResource UiMinutes}" VerticalAlignment="Center" Margin="4,0,8,0" Foreground="{DynamicResource TextSubtle}"/>
+
+                                                                    <ComboBox SelectedValue="{Binding TimerTarget, Mode=TwoWay}" SelectedValuePath="Tag" Width="150" Margin="0,0,4,0">
+                                                                        <ComboBoxItem Content="{DynamicResource UiTimerTargetCustom}" Tag="Custom"/>
+                                                                        <ComboBoxItem Content="{DynamicResource UiLargeOilRigTrigger}" Tag="LargeOilRig"/>
+                                                                        <ComboBoxItem Content="{DynamicResource UiSmallOilRigTrigger}" Tag="SmallOilRig"/>
+                                                                    </ComboBox>
+
+                                                                    <!-- Only one of the two is ever relevant: a rig names itself. -->
+                                                                    <ui:TextBox Text="{Binding TimerName, Mode=TwoWay}" Width="130" Margin="0,0,4,0"
+                                                                                PlaceholderText="{DynamicResource UiTimerNamePlaceholder}">
+                                                                        <ui:TextBox.Style>
+                                                                            <Style TargetType="ui:TextBox" BasedOn="{StaticResource {x:Type ui:TextBox}}">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding TimerTarget}" Value="Custom">
+                                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </ui:TextBox.Style>
+                                                                    </ui:TextBox>
+
+                                                                    <CheckBox Content="{DynamicResource UiShowCrateOnMap}" IsChecked="{Binding ShowCrateOnMap, Mode=TwoWay}"
+                                                                              VerticalAlignment="Center" FontSize="11">
+                                                                        <CheckBox.Style>
+                                                                            <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding IsOilRigTimer}" Value="True">
+                                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </CheckBox.Style>
+                                                                    </CheckBox>
+                                                                    </StackPanel>
+
+                                                                    <!--  Own row: optional, and closes the gap for pushes carrying no entity ID.  -->
+                                                                    <ui:TextBox Text="{Binding AlarmTextHint, Mode=TwoWay}" Width="330" Margin="0,6,0,0"
+                                                                                HorizontalAlignment="Left"
+                                                                                PlaceholderText="{DynamicResource UiAlarmTextHint}">
+                                                                        <ui:TextBox.ToolTip>
+                                                                            <!--  Wrapped: the default tooltip is a single line and ran off screen.  -->
+                                                                            <ToolTip MaxWidth="420">
+                                                                                <TextBlock Text="{DynamicResource UiAlarmTextHintTooltip}" TextWrapping="Wrap" />
+                                                                            </ToolTip>
+                                                                        </ui:TextBox.ToolTip>
+                                                                        <ui:TextBox.Style>
+                                                                            <Style TargetType="ui:TextBox" BasedOn="{StaticResource {x:Type ui:TextBox}}">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding IsOilRigTimer}" Value="True">
+                                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </ui:TextBox.Style>
+                                                                    </ui:TextBox>
+                                                                </StackPanel>
+
+                                                                <!-- Wait Config -->
+                                                                <StackPanel Orientation="Horizontal" Margin="0,0,8,4" x:Name="PanelWait">
+                                                                    <StackPanel.Style>
+                                                                        <Style TargetType="StackPanel">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding StepType}" Value="Wait">
+                                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </StackPanel.Style>
+                                                                    <ui:TextBox Text="{Binding WaitSeconds, Mode=TwoWay}" Width="60" PlaceholderText="{DynamicResource UiSecs}"/>
+                                                                    <TextBlock Text="{DynamicResource UiSeconds}" VerticalAlignment="Center" Margin="4,0,0,0" Foreground="{DynamicResource TextSubtle}"/>
+                                                                </StackPanel>
+
+                                                                <!-- Toggle Config -->
+                                                                <StackPanel Orientation="Horizontal" Margin="0,0,8,4" x:Name="PanelToggle">
+                                                                    <StackPanel.Style>
+                                                                        <Style TargetType="StackPanel">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding StepType}" Value="Toggle">
+                                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </StackPanel.Style>
+                                                                    <!-- Switches or Group Selector -->
+                                                                    <ComboBox x:Name="CmbToggleDevice" Width="150" Margin="0,0,4,0"
+                                                                              ItemsSource="{Binding DataContext.Selected.FlatDevices, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                              SelectedValue="{Binding TargetEntityId, Mode=TwoWay}"
+                                                                              SelectedValuePath="EntityId" DisplayMemberPath="DisplayName"/>
+                                                                    <ui:TextBox Text="{Binding TargetGroupName, Mode=TwoWay}" Width="100" Margin="0,0,4,0" PlaceholderText="{DynamicResource UiOrGroupName}"/>
+                                                                    
+                                                                    <ComboBox SelectedValue="{Binding ToggleState, Mode=TwoWay}" SelectedValuePath="Tag" Width="100">
+                                                                        <ComboBoxItem Content="{DynamicResource Toggle}" Tag="{x:Null}"/>
+                                                                        <ComboBoxItem Content="{DynamicResource UiForceON}">
+                                                                            <ComboBoxItem.Tag>
+                                                                                <sys:Boolean>True</sys:Boolean>
+                                                                            </ComboBoxItem.Tag>
+                                                                        </ComboBoxItem>
+                                                                        <ComboBoxItem Content="{DynamicResource UiForceOFF}">
+                                                                            <ComboBoxItem.Tag>
+                                                                                <sys:Boolean>False</sys:Boolean>
+                                                                            </ComboBoxItem.Tag>
+                                                                        </ComboBoxItem>
+                                                                    </ComboBox>
+                                                                </StackPanel>
+
+                                                                <!-- Check Availability Config -->
+                                                                <StackPanel Orientation="Horizontal" Margin="0,0,8,4" x:Name="PanelAvailability">
+                                                                    <StackPanel.Style>
+                                                                        <Style TargetType="StackPanel">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding StepType}" Value="CheckAvailability">
+                                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </StackPanel.Style>
+                                                                    <ComboBox x:Name="CmbAvailabilityDevice" Width="150" Margin="0,0,4,0"
+                                                                              ItemsSource="{Binding DataContext.Selected.FlatDevices, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                              SelectedValue="{Binding TargetEntityId, Mode=TwoWay}"
+                                                                              SelectedValuePath="EntityId" DisplayMemberPath="DisplayName"/>
+                                                                    <ComboBox SelectedValue="{Binding ConditionOperator, Mode=TwoWay}" SelectedValuePath="Tag" Width="120">
+                                                                        <ComboBoxItem Content="{DynamicResource UiISOFFLINE}" Tag="IS_OFFLINE"/>
+                                                                        <ComboBoxItem Content="{DynamicResource UiISONLINE}" Tag="IS_ONLINE"/>
+                                                                    </ComboBox>
+                                                                </StackPanel>
+                                                            </WrapPanel>
+
+                                                            <!-- Delete Step -->
+                                                            <ui:Button Grid.Column="1" Click="BtnDeleteStep_Click" Tag="{Binding}" Appearance="Transparent" Width="24" Height="24" Padding="0" ToolTip="{DynamicResource UiDeleteStep}" Foreground="IndianRed">
+                                                                <ui:SymbolIcon Symbol="Dismiss20"/>
+                                                            </ui:Button>
+                                                        </Grid>
+
+                                                        <!-- Nested Steps for CheckAvailability condition -->
+                                                        <StackPanel x:Name="PanelNestedSteps" Margin="20,8,0,0">
+                                                            <StackPanel.Style>
+                                                                <Style TargetType="StackPanel">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding StepType}" Value="CheckAvailability">
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </StackPanel.Style>
+                                                            <TextBlock Text="{DynamicResource UiNestedStepsIfConditionMet}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource Accent}" Margin="0,0,0,4"/>
+                                                            <ItemsControl ItemsSource="{Binding ConditionalSteps}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <Grid Margin="0,0,0,4">
+                                                                            <Grid.ColumnDefinitions>
+                                                                                <ColumnDefinition Width="*"/>
+                                                                                <ColumnDefinition Width="Auto"/>
+                                                                            </Grid.ColumnDefinitions>
+                                                                            <WrapPanel VerticalAlignment="Center">
+                                                                                <ComboBox SelectedValue="{Binding StepType, Mode=TwoWay}" SelectedValuePath="Tag" Width="100" Margin="0,0,4,0">
+                                                                                    <ComboBoxItem Content="{DynamicResource UiWait}" Tag="Wait"/>
+                                                                                    <ComboBoxItem Content="{DynamicResource Toggle}" Tag="Toggle"/>
+                                                                                </ComboBox>
+                                                                                
+                                                                                <ui:TextBox Text="{Binding WaitSeconds, Mode=TwoWay}" Width="50" PlaceholderText="{DynamicResource UiSecs}" Visibility="Visible"/>
+                                                                                <ComboBox SelectedValue="{Binding TargetEntityId, Mode=TwoWay}" Width="120" Margin="4,0,4,0"
+                                                                                          ItemsSource="{Binding DataContext.Selected.FlatDevices, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                                          SelectedValuePath="EntityId" DisplayMemberPath="DisplayName" x:Name="CmbNestedToggleDevice"/>
+                                                                                <ComboBox SelectedValue="{Binding ToggleState, Mode=TwoWay}" SelectedValuePath="Tag" Width="90">
+                                                                                    <ComboBoxItem Content="{DynamicResource Toggle}" Tag="{x:Null}"/>
+                                                                                    <ComboBoxItem Content="{DynamicResource On}">
+                                                                                        <ComboBoxItem.Tag>
+                                                                                            <sys:Boolean>True</sys:Boolean>
+                                                                                        </ComboBoxItem.Tag>
+                                                                                    </ComboBoxItem>
+                                                                                    <ComboBoxItem Content="{DynamicResource Off}">
+                                                                                        <ComboBoxItem.Tag>
+                                                                                            <sys:Boolean>False</sys:Boolean>
+                                                                                        </ComboBoxItem.Tag>
+                                                                                    </ComboBoxItem>
+                                                                                </ComboBox>
+                                                                            </WrapPanel>
+                                                                            <ui:Button Grid.Column="1" Click="BtnDeleteNestedStep_Click" Tag="{Binding}" Appearance="Transparent" Width="20" Height="20" Padding="0" Foreground="IndianRed">
+                                                                                <ui:SymbolIcon Symbol="Dismiss16"/>
+                                                                            </ui:Button>
+                                                                        </Grid>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                            <ui:Button Click="BtnAddNestedStep_Click" Tag="{Binding}" Content="{DynamicResource UiAddNestedAction}" Margin="0,4,0,0" Padding="8,2" FontSize="10" Height="22"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- Add Action Button -->
+                                    <ui:Button Click="BtnAddStep_Click" Tag="{Binding}" Content="{DynamicResource UiAddExecutionStep}" Margin="0,4,0,0" Padding="8,4" FontSize="11" Icon="{ui:SymbolIcon Symbol=Add20}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>

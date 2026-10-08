@@ -1,0 +1,57 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using RustPlusDesk.Models;
+using RustPlusDesk.Services.Data;
+
+namespace RustPlusDesk.Services;
+
+public static class StorageService
+{
+    public static void SaveProfiles(IEnumerable<ServerProfile> profiles)
+    {
+        ProfileDataModule.SaveProfiles(profiles);
+    }
+
+    public static string GetProfilesPath() =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RustPlusDesk", "profiles.json");
+
+    public static List<ServerProfile> LoadProfiles()
+    {
+        return ProfileDataModule.LoadProfiles();
+    }
+
+    public static void SaveCache<T>(string key, T data)
+    {
+        DataManager.SaveCache(key, data);
+    }
+
+    public static T? LoadCache<T>(string key)
+    {
+        return DataManager.LoadCache<T>(key);
+    }
+}
+
+/// <summary>
+/// Mini-map appearance. The layer flags below are additive with defaults of true, so a settings
+/// file written before they existed still loads and keeps showing everything it used to.
+/// </summary>
+public record MiniMapSettings(
+    int ShapeIndex,
+    double Size,
+    double Opacity,
+    bool ShowTime,
+    bool ShowPop = false,
+    bool ShowTexture = true,
+    bool ShowGrid = true,
+    bool ShowDrawings = true,
+    bool ShowIcons = true,
+    bool ShowPlayers = true,
+    bool ShowDeaths = true,
+    bool ShowHeatmap = true,
+
+    // Off by default, unlike the rest: the zones only exist once the map has been parsed, and a
+    // layer that switches itself on the moment a parse finishes would be a surprise rather than
+    // a setting. Every other layer is something the map always has.
+    bool ShowNoBuild = false);
+

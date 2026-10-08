@@ -1,0 +1,112 @@
+# --- Visual Studio / .NET ---
+**/bin/
+**/obj/
+*.lnk
+**/.vs/
+**/*.user
+**/*.suo
+*.cache
+*.log
+/graphify-out/
+# Publish-Output (dotnet publish)
+**/publish/
+.antigravitycli
+# NuGet / Paketmanager
+*.nupkg
+**/packages/
+*.snupkg
+Releases/
+# Build-Artefakte / Temp
+*.tmp
+*.tmp.*
+*.pid
+*.DS_Store
+Thumbs.db
+graphify-out
+# Inno Setup: .iss im Repo behalten? (optional)
+# Wenn du das Skript NICHT versionieren willst, einkommentieren:
+# *.iss
+
+# Binärdateien nicht versionieren
+*.exe
+*.msi
+*.dll
+
+# Installer-Output: Ordner behalten, Inhalte ignorieren
+installer/Output/*
+!installer/Output/.gitkeep
+
+# Lokale Server-/Helper-Skripte
+**/Scripts/
+!RustPlusDesktop/Scripts/
+RustPlusDesktop/Scripts/*.py
+RustPlusDesktop/Scripts/*.conf
+
+# Doku/Assets (rein informativ – wäre auch ohne diese Zeilen ok)
+!README.md
+!LICENSE
+!docs/
+docs/*
+!RustPlusDesktop/*.png
+!RustPlusDesktop/*.jpg
+RustPlusDesktop/RustPlusDesk_lbvqmzga_wpftmp.csproj
+RustPlusDesktop/Setup.iss
+.opencode
+.agents
+# Secrets config
+.env
+RustPlusDesktop/Services/Data/ObfuscatedSecrets.cs
+RustPlusDesktop/supabase/.temp/
+.env-backup
+env
+
+
+# MapParser migration runtime/prototype assets
+/MapParser/app.js
+/MapParser/index.html
+/MapParser/style.css
+/MapParser/map_raw_normalized.png
+/MapParser/maps/
+/MapParser/Rust_Assets/
+/MapParser/*.map
+/MapParser/*.rgt_map
+/electron/*
+# Local 3D MapParser workspace and generated parser payloads
+/MapParser/
+/node_modules/
+/package.json
+/package-lock.json
+/logger.js
+/logger.py
+/test_*.js
+/test_*.html
+/build_*.js
+/match_bounds*.js
+/patch_*.ps1
+*.rgt_map
+**/Rust_Assets/
+**/AssetRipper_*/
+**/AssetStudio/
+**/RustEdit/
+**/unneeded Object LODs/
+**/*.fbx
+**/*.glb
+**/*.gltf
+# Allow runtime folder executables and bin directories
+!RustPlusDesktop/runtime/**/*.exe
+!RustPlusDesktop/runtime/**/bin/
+!RustPlusDesktop/runtime/**/bin/**
+
+# Local build secrets
+build_secrets*.zip
+.gemini/
+Corel Auto-Preserve/
+
+# Genetics Lab (build assets only; static images & resources stay tracked)
+RustPlusDesktop/Features/GeneticsLab/dist/assets/
+RustPlusDesktop/Features/GeneticsLab/dist/index.html
+RustPlusDesktop/Features/GeneticsLab/node_modules/
+
+# WPF emits a temp project per build with a random name; the single literal entry
+# above only ever matched one of them.
+RustPlusDesktop/*_wpftmp.csproj

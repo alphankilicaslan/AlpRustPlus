@@ -1,0 +1,595 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using RustPlusApi.Fcm;
+using RustPlusApi.Fcm.Data;
+using RustPlusDesk.Models;
+
+namespace RustPlusDesk.Services
+{
+    /// <summary>
+    /// FCM pairing listener built on RustPlusApi.Fcm's MCS socket.
+    /// We parse the raw <see cref="FcmMessage"/> ourselves rather than using the
+    /// library's high-level typed events, because those are lossy for our needs: the typed
+    /// AlarmNotification carries no ip/port, and its pairing PlayerToken is an <c>int</c> that
+    /// cannot hold a Rust+ token. The raw <see cref="Body"/> has everything (Ip, Port,
+    /// PlayerToken as string, EntityId, Desc, …).
+    ///
+    /// Maps messages to the app events (<see cref="Paired"/>, <see cref="AlarmReceived"/>,
+    /// <see cref="ChatReceived"/>, <see cref="OfflineDeathReceived"/>,
+    /// <see cref="ServerInfoReceived"/>). Registration is unchanged — it reuses the credentials
+    /// in <c>rustplusjs-config.json</c>, and runs native registration if none exist yet.
+    /// </summary>
+    public sealed class NativeFcmListener : IPairingListener
+    {
+        public event EventHandler<PairingPayload>? Paired;
+        public event EventHandler? Listening;
+        public event EventHandler? RegistrationCompleted;
+        public event EventHandler? Stopped;
+        public event EventHandler<string>? Failed;
+        public event EventHandler<AlarmNotification>? AlarmReceived;
+        public event EventHandler<TeamChatMessage>? ChatReceived;
+        public event EventHandler<OfflineDeathNotification>? OfflineDeathReceived;
+        public event EventHandler<PairingPayload>? ServerInfoReceived;
+
+        private static readonly Regex DeathTitleRegex = new(
+            @"^(?:You were killed by|Du wurdest getötet von)\s+(?<attacker>.+)",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private readonly Action<string> _log;
+        private readonly object _gate = new();
+
+        private CancellationTokenSource? _cts;
+        private RawFcmClient? _client;
+        private List<string>? _persistentIds;
+        private volatile bool _running;
+
+        // De-duplicates the same pairing bounced twice in quick succession.
+        private string? _lastPairKey;
+        private DateTime _lastPairAt;
+
+        // One reconnect at a time. Disconnected and SocketClosed can both fire for a single
+        // drop, and two reconnects would leave two live clients delivering every push twice.
+        private int _reconnecting;
+
+        public NativeFcmListener(Action<string> log) => _log = log;
+
+        public bool IsRunning => _running;
+
+        public bool IsConfigured => File.Exists(ConfigPath) && new FileInfo(ConfigPath).Length > 50;
+
+        internal static string ConfigPath => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "RustPlusDesk", "rustplusjs-config.json");
+
+        private static string PersistentIdPath => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "RustPlusDesk", "fcm-persistent-ids.json");
+
+        public Task StartAsync(CancellationToken ct = default) =>
+            StartAsync(null, null, ct);
+
+        public Task StartAsyncUsingEdge(CancellationToken ct = default)
+        {
+            var edge = ChromiumBrowserLocator.FindEdge();
+            if (edge is not null)
+                return StartAsync(edge, "Microsoft Edge", ct);
+
+            _log("[fcm-native] Microsoft Edge was not found.");
+            Failed?.Invoke(this, "edge-not-found");
+            Stopped?.Invoke(this, EventArgs.Empty);
+            return Task.CompletedTask;
+        }
+
+        private async Task StartAsync(string? browserPath, string? browserName, CancellationToken ct)
+        {
+            if (_running)
+            {
+                _log("[fcm-native] Listener already running.");
+                return;
+            }
+
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
+
+            if (!IsConfigured)
+            {
+                _log("[fcm-native] No FCM config found — running native registration first …");
+                bool ok = await NativeFcmRegistrationService.TryRegisterAsync(
+                        ConfigPath, _log, browserPath, browserName, _cts.Token)
+                    .ConfigureAwait(false);
+                if (!ok)
+                {
+                    _log("[fcm-native] ❌ Registration failed. Check the browser login and retry.");
+                    Failed?.Invoke(this, "native-registration-failed");
+                    Stopped?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+
+                var issuedAt = DateTime.Now;
+                var expiresAt = issuedAt.AddDays(15);
+                TrackingService.FcmIssuedAt = issuedAt;
+                TrackingService.FcmExpiresAt = expiresAt;
+                EnrichFcmConfig(issuedAt, expiresAt, TrackingService.SteamId64);
+                RegistrationCompleted?.Invoke(this, EventArgs.Empty);
+            }
+
+            if (!TryLoadCredentials(out var credentials))
+            {
+                _log("[fcm-native] ❌ Could not read gcm.androidId/securityToken from config.");
+                Failed?.Invoke(this, "invalid-config");
+                Stopped?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+
+            _persistentIds = LoadPersistentIds();
+            await ConnectAsync(credentials!, _cts.Token).ConfigureAwait(false);
+        }
+
+        private async Task ConnectAsync(Credentials credentials, CancellationToken ct)
+        {
+            try
+            {
+                var client = new RawFcmClient(credentials, _persistentIds, HandleMessage);
+                client.Connected += (_, __) =>
+                {
+                    _running = true;
+                    _log("[fcm-native] Listening for FCM Notifications");
+                    Listening?.Invoke(this, EventArgs.Empty);
+                };
+                client.ErrorOccurred += (_, ex) =>
+                {
+                    if (IsSocketResetOrDisconnect(ex))
+                    {
+                        _log("[fcm-native] Connection reset by remote host.");
+                    }
+                    else
+                    {
+                        _log("[fcm-native:err] " + ex.Message);
+                    }
+
+                    // A reset socket surfaces here and, on that path, without a following
+                    // Disconnected. Left alone the listener stays up with a dead socket and
+                    // silently stops delivering pushes until the app is restarted.
+                    if (LooksFatal(ex)) OnSocketDown();
+                };
+                client.PersistentIdReceived += (_, __) => SavePersistentIds();
+                client.Disconnected += (_, __) => OnSocketDown();
+                client.SocketClosed += (_, __) => OnSocketDown();
+
+                // Hand the old client its retirement before replacing it. Otherwise its socket
+                // and handlers stay alive and keep driving reconnects of their own.
+                RawFcmClient? previous;
+                lock (_gate) { previous = _client; _client = client; }
+                if (previous is not null)
+                {
+                    try { await previous.DisposeAsync().ConfigureAwait(false); } catch { }
+                }
+
+                await client.ConnectAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                _running = false;
+                Stopped?.Invoke(this, EventArgs.Empty);
+            }
+            catch (Exception ex)
+            {
+                _running = false;
+                if (IsSocketResetOrDisconnect(ex))
+                {
+                    _log("[fcm-native] Connection dropped by remote host.");
+                }
+                else
+                {
+                    _log("[fcm-native:err] connect failed: " + ex.Message);
+                    Failed?.Invoke(this, ex.Message);
+                }
+                OnSocketDown();
+            }
+        }
+
+        // Bounded auto-reconnect.
+        /// <summary>
+        /// Socket-level failures worth reconnecting for. Parse and config errors are not:
+        /// dropping the connection over those would turn one bad message into a reconnect loop.
+        /// </summary>
+        private static bool LooksFatal(Exception ex)
+        {
+            for (var e = ex; e is not null; e = e.InnerException!)
+            {
+                if (e is System.Net.Sockets.SocketException or System.IO.IOException
+                    or ObjectDisposedException) return true;
+            }
+            return false;
+        }
+
+        private void OnSocketDown()
+        {
+            // Single-flight: the first caller wins, later ones return immediately. Claimed only
+            // when the flag is still clear, so the guard can be checked exactly once - taking it
+            // unconditionally here and testing it again below would block the reconnect forever.
+            if (Interlocked.CompareExchange(ref _reconnecting, 1, 0) != 0) return;
+
+            var wasRunning = _running;
+            _running = false;
+            if (wasRunning) Stopped?.Invoke(this, EventArgs.Empty);
+
+            var cts = _cts;
+            if (cts is null || cts.IsCancellationRequested)
+            {
+                Interlocked.Exchange(ref _reconnecting, 0);
+                return;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(3000, cts.Token).ConfigureAwait(false);
+                    if (cts.IsCancellationRequested) return;
+                    if (!TryLoadCredentials(out var creds)) return;
+
+                    RawFcmClient? oldClient;
+                    lock (_gate)
+                    {
+                        oldClient = _client;
+                        _client = null;
+                    }
+                    if (oldClient != null)
+                    {
+                        try { await oldClient.DisposeAsync().ConfigureAwait(false); } catch { }
+                    }
+
+                    _log("[fcm-native] Reconnecting …");
+                    await ConnectAsync(creds!, cts.Token).ConfigureAwait(false);
+                }
+                catch { /* cancelled */ }
+                finally
+                {
+                    Interlocked.Exchange(ref _reconnecting, 0);
+                }
+            });
+        }
+
+        public async Task StopAsync()
+        {
+            try { _cts?.Cancel(); } catch { }
+            Interlocked.Exchange(ref _reconnecting, 0);
+
+            RawFcmClient? client;
+            lock (_gate) { client = _client; _client = null; }
+
+            if (client != null)
+            {
+                try { await client.DisposeAsync().ConfigureAwait(false); } catch { }
+            }
+
+            SavePersistentIds();
+
+            var wasRunning = _running;
+            _running = false;
+            _cts = null;
+            if (wasRunning) Stopped?.Invoke(this, EventArgs.Empty);
+            _log("[fcm-native] Listener stopped.");
+        }
+
+        private static bool IsSocketResetOrDisconnect(Exception? ex)
+        {
+            while (ex != null)
+            {
+                if (ex is System.Net.Sockets.SocketException se)
+                {
+                    if (se.SocketErrorCode is System.Net.Sockets.SocketError.ConnectionReset
+                        or System.Net.Sockets.SocketError.ConnectionAborted
+                        or System.Net.Sockets.SocketError.Shutdown
+                        or System.Net.Sockets.SocketError.TimedOut
+                        or System.Net.Sockets.SocketError.NetworkReset)
+                    {
+                        return true;
+                    }
+                }
+
+                if (ex is IOException or TimeoutException or OperationCanceledException)
+                {
+                    var msg = ex.Message;
+                    if (msg.Contains("transport connection", StringComparison.OrdinalIgnoreCase)
+                        || msg.Contains("closed", StringComparison.OrdinalIgnoreCase)
+                        || msg.Contains("geschlossen", StringComparison.OrdinalIgnoreCase)
+                        || msg.Contains("reset", StringComparison.OrdinalIgnoreCase)
+                        || msg.Contains("10054", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                ex = ex.InnerException;
+            }
+
+            return false;
+        }
+
+        // ---- Dispatch: one uniform parse of the full FcmMessage into app events ----
+
+        /// <summary>
+        /// When a push was actually sent, in local time.
+        ///
+        /// Google holds pushes for a listener that is away and delivers the backlog
+        /// the moment it reconnects, so the moment we receive one says nothing about
+        /// when it happened. The library hands us <c>SentAt</c> and we were simply
+        /// discarding it.
+        ///
+        /// The kind is normalised rather than trusted: a value read as local when it
+        /// is UTC would be hours out, which is worse than the arrival time it
+        /// replaces. Anything that lands in the future, or absurdly far in the past,
+        /// is not believed at all — an alarm wrongly aged is an alarm silently
+        /// dropped, and that is the one outcome worth avoiding here.
+        /// </summary>
+        private static DateTime EventTimeOf(FcmMessage message)
+        {
+            var sent = message.SentAt;
+            if (sent == default) return DateTime.Now;
+
+            var local = sent.Kind switch
+            {
+                DateTimeKind.Local => sent,
+                DateTimeKind.Utc => sent.ToLocalTime(),
+                _ => DateTime.SpecifyKind(sent, DateTimeKind.Utc).ToLocalTime(),
+            };
+
+            var age = DateTime.Now - local;
+            if (age < TimeSpan.FromMinutes(-5) || age > TimeSpan.FromDays(30)) return DateTime.Now;
+
+            return local;
+        }
+
+        private void HandleMessage(FcmMessage message)
+        {
+            try
+            {
+                var data = message.Data;
+                if (data == null) return;
+                var body = data.Body;
+
+                long approxBytes = System.Text.Encoding.UTF8.GetByteCount(data.Title ?? "") +
+                                  System.Text.Encoding.UTF8.GetByteCount(data.Message ?? "") + 128;
+                NetworkTrafficMonitor.Instance.RecordInbound(
+                    "FCM Push",
+                    $"FCM: {data.ChannelId ?? "Notification"}",
+                    approxBytes,
+                    details: data.Title ?? data.Message ?? "");
+
+                // Our own probe coming back. Claimed first so it can never be mistaken for a
+                // pairing, an alarm, or an unhandled channel.
+                if (FcmSelfTestService.TryConsume(data.Title)) return;
+
+                // Offline death is title-driven and not tied to a single channel.
+                var deathMatch = DeathTitleRegex.Match(data.Title ?? string.Empty);
+                if (deathMatch.Success)
+                {
+                    var attacker = deathMatch.Groups["attacker"].Value.Trim().Trim('\'', '"');
+                    var server = !string.IsNullOrWhiteSpace(body?.Name) ? body!.Name
+                               : (!string.IsNullOrWhiteSpace(data.Message) ? data.Message : "-");
+                    // When it happened, not when we heard about it. A death push is
+                    // queued by definition — the player was away, which is the whole
+                    // point — so the arrival time is always the moment the app opened
+                    // and never the moment they died. It is this value that goes into
+                    // the stored history.
+                    var deathAt = EventTimeOf(message);
+                    OfflineDeathReceived?.Invoke(this,
+                        new OfflineDeathNotification(deathAt, server, attacker,
+                            NullIfEmpty(body?.Ip), NonZero(body?.Port)));
+                    _log($"[fcm-native] Offline Death | {server} | {attacker} " +
+                         $"| died {deathAt:dd.MM. HH:mm:ss}");
+                    return;
+                }
+
+                switch ((data.ChannelId ?? string.Empty).ToLowerInvariant())
+                {
+                    case "pairing":
+                        HandlePairing(message, body);
+                        break;
+
+                    case "alarm":
+                        var title = string.IsNullOrWhiteSpace(data.Title) ? null : data.Title;
+                        var msg = !string.IsNullOrWhiteSpace(data.Message) ? data.Message : (title ?? "");
+                        var device = (body?.EntityName ?? "Alarm")
+                                     + (body?.EntityId is { } eid ? $"#{eid}" : "");
+                        var alarmAt = EventTimeOf(message);
+                        AlarmReceived?.Invoke(this, new AlarmNotification(
+                            DateTime.Now,
+                            body?.Name ?? "-",
+                            device,
+                            (uint?)body?.EntityId,
+                            msg,
+                            NullIfEmpty(body?.Ip),
+                            NonZero(body?.Port),
+                            title,
+                            NullIfEmpty(message.PersistentId),
+                            alarmAt));
+                        _log($"[fcm-native] Alarm | {body?.Name ?? "-"} | {device} | \"{msg}\" " +
+                             $"| sent {alarmAt:HH:mm:ss} ({(int)(DateTime.Now - alarmAt).TotalSeconds}s ago)");
+                        break;
+
+                    case "chat":
+                        var author = string.IsNullOrWhiteSpace(data.Title) ? "Team" : data.Title;
+                        var text = data.Message ?? string.Empty;
+                        ChatReceived?.Invoke(this, new TeamChatMessage(
+                            DateTime.Now, author, 0, text,
+                            NullIfEmpty(body?.Ip), NonZero(body?.Port)));
+                        break;
+
+                    default:
+                        _log($"[fcm-native] Unhandled channel '{data.ChannelId}' | title=\"{data.Title}\"");
+                        break;
+                }
+
+                // Server description can ride along on any message that carries a Body.Desc.
+                if (!string.IsNullOrWhiteSpace(body?.Desc))
+                {
+                    ServerInfoReceived?.Invoke(this, new PairingPayload
+                    {
+                        Host = body!.Ip ?? string.Empty,
+                        Port = body.Port,
+                        ServerName = body.Name,
+                        ServerDescription = body.Desc!.Trim(),
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _log("[fcm-native:err] parse error: " + ex.Message);
+            }
+        }
+
+        private void HandlePairing(FcmMessage message, Body? body)
+        {
+            if (body is null || string.IsNullOrWhiteSpace(body.Ip) || string.IsNullOrWhiteSpace(body.PlayerToken))
+                return;
+
+            string? kind = body.EntityType switch
+            {
+                1 => "SmartSwitch",
+                2 => "SmartAlarm",
+                3 => "StorageMonitor",
+                _ => null,
+            } ?? (string.IsNullOrWhiteSpace(body.Type) ? null : body.Type);
+
+            var payload = new PairingPayload
+            {
+                Host = body.Ip,
+                Port = body.Port,
+                ServerName = string.IsNullOrWhiteSpace(body.Name) ? null : body.Name,
+                ServerDescription = string.IsNullOrWhiteSpace(body.Desc) ? null : body.Desc,
+                SteamId64 = body.PlayerId.ToString(CultureInfo.InvariantCulture),
+                PlayerToken = body.PlayerToken,
+                EntityId = (uint?)body.EntityId,
+                EntityName = string.IsNullOrWhiteSpace(body.EntityName) ? null : body.EntityName,
+                EntityType = kind,
+            };
+
+            var key = $"{payload.Host}:{payload.Port}|{payload.SteamId64}|{payload.PlayerToken}|{payload.EntityId}";
+            if (_lastPairKey == key && (DateTime.UtcNow - _lastPairAt).TotalSeconds < 20)
+            {
+                _log("[fcm-native] duplicate pairing ignored.");
+                return;
+            }
+            _lastPairKey = key;
+            _lastPairAt = DateTime.UtcNow;
+
+            Paired?.Invoke(this, payload);
+            _log($"[fcm-native] Pairing → {(payload.ServerName ?? payload.Host)}:{payload.Port}"
+                 + (payload.EntityId.HasValue ? $"  // Entity {payload.EntityId}" : ""));
+        }
+
+        // ---- Helpers ----
+
+        private bool TryLoadCredentials(out Credentials? credentials)
+        {
+            credentials = null;
+            try
+            {
+                var json = File.ReadAllText(ConfigPath);
+                using var doc = JsonDocument.Parse(json);
+                if (!doc.RootElement.TryGetProperty("fcm_credentials", out var fcm) ||
+                    !fcm.TryGetProperty("gcm", out var gcm))
+                    return false;
+
+                var androidId = ReadUlong(gcm, "androidId");
+                var securityToken = ReadUlong(gcm, "securityToken");
+                if (androidId == 0 || securityToken == 0) return false;
+
+                credentials = new Credentials
+                {
+                    Gcm = new Gcm { AndroidId = androidId, SecurityToken = securityToken },
+                };
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _log("[fcm-native:err] read config: " + ex.Message);
+                return false;
+            }
+        }
+
+        private static ulong ReadUlong(JsonElement obj, string name)
+        {
+            if (!obj.TryGetProperty(name, out var v)) return 0;
+            return v.ValueKind switch
+            {
+                JsonValueKind.String => ulong.TryParse(v.GetString(), out var s) ? s : 0,
+                JsonValueKind.Number => v.TryGetUInt64(out var n) ? n : 0,
+                _ => 0,
+            };
+        }
+
+        private List<string> LoadPersistentIds()
+        {
+            try
+            {
+                if (File.Exists(PersistentIdPath))
+                    return JsonSerializer.Deserialize<List<string>>(File.ReadAllText(PersistentIdPath))
+                           ?? new List<string>();
+            }
+            catch { }
+            return new List<string>();
+        }
+
+        private void SavePersistentIds()
+        {
+            try
+            {
+                var ids = _persistentIds;
+                if (ids is null) return;
+                // Keep the file bounded; only the most recent ids matter for dedup.
+                List<string> snapshot;
+                lock (ids) snapshot = new List<string>(ids);
+                if (snapshot.Count > 1000)
+                    snapshot = snapshot.GetRange(snapshot.Count - 1000, 1000);
+                File.WriteAllText(PersistentIdPath, JsonSerializer.Serialize(snapshot));
+            }
+            catch { }
+        }
+
+        private static string? NullIfEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+        private static int? NonZero(int? p) => p is > 0 ? p : null;
+
+        /// <summary>
+        /// Reads rustplusjs-config.json, injects issue_date / expiry_date / steam_id, and writes
+        /// it back.
+        /// </summary>
+        private void EnrichFcmConfig(DateTime issuedAt, DateTime expiresAt, string? steamId) =>
+            NativeFcmRegistrationService.StampConfigMetadata(ConfigPath, issuedAt, expiresAt, steamId, _log);
+
+        /// <summary>
+        /// Subclasses RustPlusFcm so we receive the fully-typed <see cref="FcmMessage"/> directly
+        /// in <see cref="ParseNotification"/>, bypassing the library's lossy high-level events.
+        /// </summary>
+        private sealed class RawFcmClient : RustPlusFcm
+        {
+            /// <summary>
+            /// The library defaults to a five-minute heartbeat, which leaves the socket silent
+            /// long enough for a home router to drop its NAT mapping - every observed drop was
+            /// noticed exactly a multiple of five minutes after connecting. A minute of traffic
+            /// keeps the mapping alive and costs a few bytes.
+            /// </summary>
+            private static readonly RustPlusFcmSocketOptions SocketOptions = new()
+            {
+                HeartbeatInterval = TimeSpan.FromSeconds(60),
+                InactivityTimeout = TimeSpan.FromMinutes(3),
+            };
+
+            private readonly Action<FcmMessage> _onMessage;
+
+            public RawFcmClient(Credentials credentials, ICollection<string>? persistentIds, Action<FcmMessage> onMessage)
+                : base(credentials, persistentIds, SocketOptions) => _onMessage = onMessage;
+
+            protected override void ParseNotification(FcmMessage message) => _onMessage(message);
+        }
+    }
+}
